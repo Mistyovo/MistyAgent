@@ -13,6 +13,8 @@ import { readTool } from '#/core/tools/builtin/read';
 import { writeTool } from '#/core/tools/builtin/write';
 import type { ToolContext } from '#/core/tools/tool';
 
+import { FakeProvider } from './fake-provider';
+
 let cwd: string;
 let ctx: ToolContext;
 
@@ -156,7 +158,7 @@ describe('grep', () => {
 });
 
 describe('registry', () => {
-  it('注册六个内置工具并输出 ToolDefinition', () => {
+  it('注册内置工具并输出 ToolDefinition（无宿主能力时不含 agent）', () => {
     const registry = createBuiltinRegistry();
     expect(registry.list().map((t) => t.name).toSorted()).toEqual([
       'bash',
@@ -164,12 +166,21 @@ describe('registry', () => {
       'glob',
       'grep',
       'read',
+      'todo',
       'write',
     ]);
     for (const definition of registry.definitions()) {
       expect(definition.parameters).toMatchObject({ type: 'object' });
     }
     expect(() => registry.register(readTool)).toThrow('重复注册');
+  });
+
+  it('提供 provider + getModel 宿主能力时额外注册 agent 工具', () => {
+    const registry = createBuiltinRegistry({
+      provider: new FakeProvider([]),
+      getModel: () => 'fake-model',
+    });
+    expect(registry.list().map((t) => t.name).toSorted()).toContain('agent');
   });
 
   it('describeCall 描述调用，非法 input 回退为工具名', () => {

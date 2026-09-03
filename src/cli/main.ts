@@ -15,6 +15,7 @@ import {
   type ResumedSession,
   type SessionSummary,
 } from '#/core/session/transcript';
+import { TodoStore } from '#/core/todos';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
@@ -178,7 +179,15 @@ async function action(options: CliOptions): Promise<void> {
   }
 
   const provider = createProvider(providerConfig);
-  const registry = createBuiltinRegistry();
+  const todoStore = new TodoStore();
+  // agent 工具经 sessionRef 闭包取运行期模型（/model 切换对后续子代理生效）；
+  // 子代理只可能在 turn 进行中运行，此时 sessionRef 必已赋值
+  let sessionRef: Session | null = null;
+  const registry = createBuiltinRegistry({
+    todoStore,
+    provider,
+    getModel: () => sessionRef?.getModel() ?? loaded.settings.provider.defaultModel,
+  });
   const sessionConfig = buildSessionConfig(loaded.settings, cwd);
   if (resumed !== null) {
     sessionConfig.transcript = { sessionId: resumed.sessionId };
@@ -189,7 +198,9 @@ async function action(options: CliOptions): Promise<void> {
     ...sessionConfig,
     provider,
     tools: registry.list(),
+    todos: todoStore,
   });
+  sessionRef = session;
 
   if (options.print !== undefined) {
     const code = await runPrintMode({ session, registry, prompt: options.print });

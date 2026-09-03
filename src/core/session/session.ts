@@ -16,6 +16,7 @@ import { runTurn, type RunTurnResult } from '../loop/run-turn';
 import type { ApprovalReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
 import type { PermissionRuntime } from '../permission/pipeline';
+import type { TodoStore } from '../todos';
 import type { Tool } from '../tools/tool';
 
 import { MISTY_VERSION, transcriptDirFor, TranscriptWriter, type SessionMeta } from './transcript';
@@ -44,6 +45,8 @@ export interface SessionConfig {
   initialMessages?: Message[] | undefined;
   /** 自动压缩阈值基数，缺省 DEFAULT_MAX_CONTEXT_TOKENS */
   maxContextTokens?: number | undefined;
+  /** 会话级 todo 存储（todo 工具全量替换它）；变更被转发为 todos-updated 事件 */
+  todos?: TodoStore | undefined;
 }
 
 interface QueuedTurn {
@@ -76,6 +79,7 @@ export class Session {
   private model: string;
   private readonly maxContextTokens: number;
   private transcript: TranscriptState | null = null;
+  private readonly todos: TodoStore | null = null;
 
   constructor(config: SessionConfig) {
     this.config = config;
@@ -85,6 +89,12 @@ export class Session {
     this.maxContextTokens = config.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
     if (config.initialMessages !== undefined) {
       this.messages.push(...config.initialMessages);
+    }
+    if (config.todos !== undefined) {
+      this.todos = config.todos;
+      this.todos.onChange((todos) => {
+        this.dispatch({ type: 'todos-updated', todos });
+      });
     }
     this.approvals = new ApprovalManager(config.cwd);
     this.permission = {
@@ -174,6 +184,7 @@ export class Session {
   /** /clear：清历史并开始新会话（启用持久化时开新 transcript 文件） */
   newSession(): void {
     this.messages.length = 0;
+    this.todos?.clear();
     if (this.transcript !== null) {
       try {
         this.transcript = this.createTranscript(randomUUID());

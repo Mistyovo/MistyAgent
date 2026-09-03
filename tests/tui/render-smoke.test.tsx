@@ -11,6 +11,7 @@ import {
   approvalDetailLines,
 } from '#/tui/components/ApprovalDialog';
 import { StatusBar } from '#/tui/components/StatusBar';
+import { TodoList } from '#/tui/components/TodoList';
 
 import { FakeProvider } from '../core/fake-provider';
 
@@ -118,6 +119,27 @@ describe('ApprovalDialog 冒烟渲染', () => {
     expect(output).toContain('1. Yes');
     expect(output).toContain("don't ask again for Bash(git *)");
     expect(output).toContain('3. No');
+  });
+});
+
+describe('TodoList 冒烟渲染', () => {
+  it('按状态渲染符号，in_progress 用 activeForm 文案', () => {
+    const output = renderToString(
+      <TodoList
+        todos={[
+          { content: '实现功能', status: 'in_progress', activeForm: '正在实现功能' },
+          { content: '写测试', status: 'pending' },
+          { content: '读代码', status: 'done' },
+        ]}
+      />,
+    );
+    expect(output).toContain('▶ 正在实现功能');
+    expect(output).toContain('☐ 写测试');
+    expect(output).toContain('☑ 读代码');
+  });
+
+  it('空列表不渲染任何内容', () => {
+    expect(renderToString(<TodoList todos={[]} />)).toBe('');
   });
 });
 

@@ -1,6 +1,7 @@
 import type { FinishReason, TokenUsage } from '#/provider/types';
 
 import type { ApprovalRequest } from './permission/approval';
+import type { TodoItem } from './todos';
 
 export interface TurnStartedEvent {
   type: 'turn-started';
@@ -80,6 +81,12 @@ export interface CompactedEvent {
   afterTokens: number;
 }
 
+/** todo 工具全量替换任务列表后发出，携带最新全量 todos */
+export interface TodosUpdatedEvent {
+  type: 'todos-updated';
+  todos: TodoItem[];
+}
+
 export type AgentEvent =
   | TurnStartedEvent
   | TurnCompleteEvent
@@ -91,7 +98,8 @@ export type AgentEvent =
   | ErrorEvent
   | InterruptedEvent
   | ApprovalRequestedEvent
-  | CompactedEvent;
+  | CompactedEvent
+  | TodosUpdatedEvent;
 
 export type EventListener = (event: AgentEvent) => void;
 export type EventDispatcher = (event: AgentEvent) => void;

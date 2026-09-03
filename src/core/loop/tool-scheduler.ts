@@ -7,6 +7,8 @@ import { evaluatePermission, type PermissionRuntime } from '../permission/pipeli
 import type { ToolRegistry } from '../tools/registry';
 import { accessesConflict, type ToolAccess, type ToolResult } from '../tools/tool';
 
+import type { DoomLoopDetector } from './doom-loop';
+
 export interface ToolCallOutcome {
   toolCall: ToolCall;
   /** JSON 解析后的参数；解析失败时为原始字符串 */
@@ -23,6 +25,8 @@ export interface ExecuteToolCallsDeps {
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
   permission: PermissionRuntime;
+  /** doom-loop 检测器（turn 级）；缺省不做重复调用检测 */
+  doomLoop?: DoomLoopDetector | undefined;
 }
 
 const INTERRUPTED_RESULT: ToolResult = { output: 'interrupted by user', isError: true };
@@ -131,7 +135,15 @@ export async function executeToolCalls(
       record(index, toolCall, input, errorOf(`权限拒绝：${decision.reason}`), 0, false);
       return null;
     }
-    if (decision.kind === 'ask' && !(await askApproval(index, toolCall, input, decision.reason))) {
+    // doom-loop：deny 之外的调用先记录签名，连续相同调用强制升级为 ask（bypass 模式也不例外）
+    const doomLoopDetected = deps.doomLoop?.record(toolCall.name, toolCall.arguments) === true;
+    const askReason = doomLoopDetected
+      ? `检测到重复调用循环：${toolCall.name} 已连续多次以完全相同的参数调用。` +
+        '确认确实需要继续请批准，否则拒绝并让模型调整思路。'
+      : decision.kind === 'ask'
+        ? decision.reason
+        : null;
+    if (askReason !== null && !(await askApproval(index, toolCall, input, askReason))) {
       return null;
     }
     return { index, toolCall, input, accesses: tool.accesses(input) };

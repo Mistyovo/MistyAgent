@@ -214,3 +214,34 @@ describe('reduceNotice / reduceClearBlocks', () => {
     expect(state.blocks).toHaveLength(0);
   });
 });
+
+describe('todos-updated', () => {
+  it('事件全量替换 state.todos，不影响 blocks 与 streaming', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      {
+        type: 'todos-updated',
+        todos: [
+          { content: '实现功能', status: 'in_progress', activeForm: '正在实现功能' },
+          { content: '写测试', status: 'pending' },
+        ],
+      },
+    );
+    expect(state.todos).toEqual([
+      { content: '实现功能', status: 'in_progress', activeForm: '正在实现功能' },
+      { content: '写测试', status: 'pending' },
+    ]);
+    expect(state.blocks).toHaveLength(0);
+    expect(state.streaming).toEqual({ active: true, text: '', reasoning: '' });
+
+    state = run(state, {
+      type: 'todos-updated',
+      todos: [{ content: '实现功能', status: 'done' }],
+    });
+    expect(state.todos).toEqual([{ content: '实现功能', status: 'done' }]);
+
+    state = run(state, { type: 'todos-updated', todos: [] });
+    expect(state.todos).toEqual([]);
+  });
+});

@@ -1,5 +1,6 @@
 import type { AgentEvent } from '#/core/events';
 import type { ApprovalRequest } from '#/core/permission/approval';
+import type { TodoItem } from '#/core/todos';
 import type { TokenUsage } from '#/provider/types';
 
 /**
@@ -71,6 +72,8 @@ export interface SessionUiState {
   queuedCount: number;
   /** 上一个 turn 的累计 token 用量，状态栏用 */
   lastUsage: TokenUsage | null;
+  /** 会话级任务列表（todo 工具全量替换），状态栏上方渲染 */
+  todos: TodoItem[];
   nextId: number;
 }
 
@@ -87,6 +90,7 @@ export function initialSessionUiState(): SessionUiState {
     pendingApproval: null,
     queuedCount: 0,
     lastUsage: null,
+    todos: [],
     nextId: 1,
   };
 }
@@ -249,5 +253,7 @@ export function reduceEvent(
           `已压缩上下文：${event.beforeCount} → ${event.afterCount} 条消息` +
           `（约 ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens）`,
       });
+    case 'todos-updated':
+      return { ...state, todos: event.todos };
   }
 }

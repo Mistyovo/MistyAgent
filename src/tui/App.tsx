@@ -13,6 +13,7 @@ import { MessageList } from './components/MessageList';
 import { PromptInput } from './components/PromptInput';
 import { StatusBar } from './components/StatusBar';
 import { StreamingArea } from './components/StreamingArea';
+import { TodoList } from './components/TodoList';
 import { useSessionController } from './controllers/session-events';
 
 export interface AppProps {
@@ -128,6 +129,7 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
         disabled={approval !== null}
         onSubmit={handleSubmit}
       />
+      <TodoList todos={state.todos} />
       <StatusBar
         cwd={cwd}
         model={model}

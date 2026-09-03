@@ -5,6 +5,7 @@ import type { PermissionRuntime } from '../permission/pipeline';
 import { ToolRegistry } from '../tools/registry';
 import type { Tool } from '../tools/tool';
 
+import { DoomLoopDetector } from './doom-loop';
 import { executeToolCalls } from './tool-scheduler';
 import { executeStep, type StepOutcome } from './turn-step';
 
@@ -109,6 +110,8 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
   }
   const definitions = registry.definitions();
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  // doom-loop 检测器是 turn 级的：连续相同工具调用在 scheduler 里被升级为审批
+  const doomLoop = new DoomLoopDetector();
   let steps = 0;
   let finalStepForced = false;
 
@@ -179,6 +182,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       signal: deps.signal,
       dispatchEvent: deps.dispatchEvent,
       permission: deps.permission,
+      doomLoop,
     });
     for (const { toolCall, result } of results) {
       const message: Message = {

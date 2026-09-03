@@ -2,11 +2,12 @@ import { render } from 'ink-testing-library';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Session } from '#/core/session/session';
+import { TodoStore } from '#/core/todos';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { App } from '#/tui/App';
 import type { ChatProvider } from '#/provider/types';
 
-import { FakeProvider, textStep } from '../core/fake-provider';
+import { FakeProvider, textStep, toolCallStep } from '../core/fake-provider';
 
 function makeApp(provider: ChatProvider) {
   const registry = createBuiltinRegistry();
@@ -98,6 +99,43 @@ describe('App 交互（ink-testing-library）', () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('ok-from-tool');
       expect(lastFrame()).toContain('执行完毕');
+    });
+  });
+
+  it('todo 工具更新经事件流渲染到状态栏上方的任务列表', async () => {
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'todo',
+          arguments:
+            '{"todos":[{"content":"实现功能","status":"in_progress","activeForm":"正在实现功能"},{"content":"写测试","status":"pending"}]}',
+        },
+      ]),
+      textStep('完成了'),
+    ]);
+    const todoStore = new TodoStore();
+    const registry = createBuiltinRegistry({ todoStore });
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      todos: todoStore,
+    });
+    const { lastFrame, stdin } = render(
+      <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+    );
+
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('▶ 正在实现功能');
+      expect(lastFrame()).toContain('☐ 写测试');
+      expect(lastFrame()).toContain('完成了');
     });
   });
 });

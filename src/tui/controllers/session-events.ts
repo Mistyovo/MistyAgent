@@ -7,7 +7,9 @@ import type { ToolRegistry } from '#/core/tools/registry';
 import {
   initialSessionUiState,
   reduceApprovalReplied,
+  reduceClearBlocks,
   reduceEvent,
+  reduceNotice,
   reduceStreamSync,
   reduceSubmit,
   type DescribeCall,
@@ -22,6 +24,10 @@ export interface SessionController {
   state: SessionUiState;
   submit(text: string): void;
   replyApproval(id: string, reply: ApprovalReply): void;
+  /** 本地提示上屏（斜杠命令输出等） */
+  notice(text: string): void;
+  /** /clear：清空 Static 区 */
+  clearBlocks(): void;
 }
 
 /**
@@ -91,5 +97,13 @@ export function useSessionController(session: Session, registry: ToolRegistry): 
     [session],
   );
 
-  return { state, submit, replyApproval };
+  const notice = useCallback((text: string) => {
+    setState((s) => reduceNotice(s, text));
+  }, []);
+
+  const clearBlocks = useCallback(() => {
+    setState((s) => reduceClearBlocks(s));
+  }, []);
+
+  return { state, submit, replyApproval, notice, clearBlocks };
 }

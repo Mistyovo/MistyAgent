@@ -7,6 +7,7 @@ import type {
 } from '#/provider/types';
 
 export interface RecordedRequest {
+  model: string;
   messages: Message[];
   tools: ToolDefinition[];
 }
@@ -22,6 +23,7 @@ export class FakeProvider implements ChatProvider {
 
   async *generate(params: ChatParams): AsyncGenerator<StreamedMessagePart, void, unknown> {
     this.requests.push({
+      model: params.model,
       messages: structuredClone(params.messages),
       tools: params.tools,
     });

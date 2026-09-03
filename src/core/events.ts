@@ -69,6 +69,17 @@ export interface ApprovalRequestedEvent {
   request: ApprovalRequest;
 }
 
+/** 上下文压缩完成（自动或 /compact 手动触发）后发出 */
+export interface CompactedEvent {
+  type: 'compacted';
+  /** 压缩前历史消息数 */
+  beforeCount: number;
+  /** 压缩后历史消息数（摘要 + 保留的尾部） */
+  afterCount: number;
+  beforeTokens: number;
+  afterTokens: number;
+}
+
 export type AgentEvent =
   | TurnStartedEvent
   | TurnCompleteEvent
@@ -79,7 +90,8 @@ export type AgentEvent =
   | StepFinishedEvent
   | ErrorEvent
   | InterruptedEvent
-  | ApprovalRequestedEvent;
+  | ApprovalRequestedEvent
+  | CompactedEvent;
 
 export type EventListener = (event: AgentEvent) => void;
 export type EventDispatcher = (event: AgentEvent) => void;

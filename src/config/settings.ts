@@ -21,6 +21,7 @@ export interface SettingsOverrides {
   permissionMode?: PermissionMode;
   permissionRules?: PermissionRule[];
   maxTokens?: number;
+  maxContextTokens?: number;
   temperature?: number;
 }
 

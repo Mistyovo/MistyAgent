@@ -4,7 +4,9 @@ import type { AgentEvent } from '#/core/events';
 import {
   initialSessionUiState,
   reduceApprovalReplied,
+  reduceClearBlocks,
   reduceEvent,
+  reduceNotice,
   reduceStreamSync,
   reduceSubmit,
   type DescribeCall,
@@ -167,6 +169,19 @@ describe('reduceEvent 流式聚合', () => {
     expect(state.pendingApproval).toBeNull();
     expect(state.blocks.map((b) => b.kind)).toEqual(['assistant', 'notice']);
   });
+
+  it('compacted 追加暗色 notice（含前后消息数）', () => {
+    const state = run(initialSessionUiState(), {
+      type: 'compacted',
+      beforeCount: 12,
+      afterCount: 5,
+      beforeTokens: 9000,
+      afterTokens: 800,
+    });
+    expect(state.blocks).toHaveLength(1);
+    expect(state.blocks[0]).toMatchObject({ kind: 'notice' });
+    expect((state.blocks[0] as { text: string }).text).toContain('12 → 5');
+  });
 });
 
 describe('审批状态', () => {
@@ -188,5 +203,14 @@ describe('reduceStreamSync', () => {
   it('非 active 时忽略缓冲同步', () => {
     const state = reduceStreamSync(initialSessionUiState(), 'x', 'y');
     expect(state.streaming).toEqual({ active: false, text: '', reasoning: '' });
+  });
+});
+
+describe('reduceNotice / reduceClearBlocks', () => {
+  it('notice 落 notice block，clearBlocks 清空 Static 区', () => {
+    let state = reduceNotice(initialSessionUiState(), '命令输出');
+    expect(state.blocks[0]).toMatchObject({ kind: 'notice', text: '命令输出' });
+    state = reduceClearBlocks(state);
+    expect(state.blocks).toHaveLength(0);
   });
 });

@@ -28,6 +28,8 @@ export const settingsSchema = z.object({
   permissionMode: permissionModeSchema.optional(),
   permissionRules: z.array(permissionRuleSchema).optional(),
   maxTokens: z.number().int().positive().optional(),
+  /** 上下文压缩的 token 上限基数（估算超过 80% 时触发），缺省 100000 */
+  maxContextTokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
 

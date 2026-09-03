@@ -11,9 +11,15 @@ import { executeStep, type StepOutcome } from './turn-step';
 export interface RunTurnDeps {
   provider: ChatProvider;
   model: string;
+  /** 每步从该函数读模型（/model 运行时切换），缺省用 model 字段 */
+  getModel?: () => string;
   systemPrompt: string;
   /** 可变历史，loop 直接 append（assistant / tool / 提示消息） */
   messages: Message[];
+  /** 历史新增消息时的回调（Session 用于 transcript 落盘） */
+  onMessageAppended?: (message: Message) => void;
+  /** 每步执行前调用（Session 组装的上下文压缩钩子） */
+  maybeCompact?: () => Promise<void>;
   tools: Tool[];
   cwd: string;
   maxSteps?: number | undefined;
@@ -42,7 +48,11 @@ function addUsage(total: TokenUsage, usage: TokenUsage | null): void {
  * 中断或出错时丢弃 toolCalls：流被截断后 arguments 可能不完整，
  * 留在历史里会在下一次请求触发 tool_use/tool_result 配对 400。
  */
-function appendAssistantMessage(messages: Message[], outcome: StepOutcome, dropToolCalls: boolean): void {
+function appendAssistantMessage(
+  push: (message: Message) => void,
+  outcome: StepOutcome,
+  dropToolCalls: boolean,
+): void {
   const toolCalls = dropToolCalls ? [] : outcome.toolCalls;
   if (outcome.text === '' && outcome.reasoning === '' && toolCalls.length === 0) {
     return;
@@ -54,11 +64,14 @@ function appendAssistantMessage(messages: Message[], outcome: StepOutcome, dropT
   if (toolCalls.length > 0) {
     message.toolCalls = toolCalls;
   }
-  messages.push(message);
+  push(message);
 }
 
 /** 给历史里缺 tool_result 的 toolCalls 补合成 isError tool 消息，保证 wire 配对完整 */
-function synthesizeMissingToolResults(messages: Message[]): void {
+function synthesizeMissingToolResults(
+  messages: Message[],
+  push: (message: Message) => void,
+): void {
   const answered = new Set<string>();
   for (const message of messages) {
     if (message.role === 'tool') {
@@ -72,7 +85,7 @@ function synthesizeMissingToolResults(messages: Message[]): void {
     for (const toolCall of message.toolCalls) {
       if (!answered.has(toolCall.id)) {
         answered.add(toolCall.id);
-        messages.push({
+        push({
           role: 'tool',
           toolCallId: toolCall.id,
           name: toolCall.name,
@@ -99,13 +112,18 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
   let steps = 0;
   let finalStepForced = false;
 
+  const pushMessage = (message: Message): void => {
+    deps.messages.push(message);
+    deps.onMessageAppended?.(message);
+  };
+
   const finish = (stopReason: TurnStopReason): RunTurnResult => {
     deps.dispatchEvent({ type: 'turn-complete', stopReason, steps, usage });
     return { stopReason, steps, usage };
   };
 
   const interrupt = (): RunTurnResult => {
-    synthesizeMissingToolResults(deps.messages);
+    synthesizeMissingToolResults(deps.messages, pushMessage);
     deps.dispatchEvent({ type: 'interrupted', reason: 'user' });
     return finish('interrupted');
   };
@@ -117,7 +135,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       return interrupt();
     }
     if (steps >= maxSteps && !finalStepForced) {
-      deps.messages.push({
+      pushMessage({
         role: 'user',
         content:
           `已达到最大步数限制（${maxSteps} 步）。请停止调用工具，` +
@@ -125,10 +143,14 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       });
       finalStepForced = true;
     }
+    await deps.maybeCompact?.();
+    if (deps.signal.aborted) {
+      return interrupt();
+    }
     steps += 1;
     const outcome = await executeStep({
       provider: deps.provider,
-      model: deps.model,
+      model: deps.getModel?.() ?? deps.model,
       systemPrompt: deps.systemPrompt,
       messages: deps.messages,
       tools: finalStepForced ? [] : definitions,
@@ -139,14 +161,14 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
     addUsage(usage, outcome.usage);
 
     if (outcome.errored) {
-      appendAssistantMessage(deps.messages, outcome, true);
+      appendAssistantMessage(pushMessage, outcome, true);
       return finish('error');
     }
     if (deps.signal.aborted) {
-      appendAssistantMessage(deps.messages, outcome, true);
+      appendAssistantMessage(pushMessage, outcome, true);
       return interrupt();
     }
-    appendAssistantMessage(deps.messages, outcome, false);
+    appendAssistantMessage(pushMessage, outcome, false);
     if (finalStepForced || outcome.toolCalls.length === 0) {
       return finish(finalStepForced ? 'max-steps' : 'completed');
     }
@@ -168,7 +190,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       if (result.isError === true) {
         message.isError = true;
       }
-      deps.messages.push(message);
+      pushMessage(message);
     }
   }
 }

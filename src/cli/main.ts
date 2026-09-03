@@ -7,13 +7,19 @@ import {
   type LoadedSettings,
   type SettingsOverrides,
 } from '#/config/settings';
+import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { Session, type SessionConfig } from '#/core/session/session';
+import {
+  listSessions,
+  resumeSession,
+  type ResumedSession,
+  type SessionSummary,
+} from '#/core/session/transcript';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
 
 import { runPrintMode } from './print-mode';
-import { buildSystemPrompt } from './system-prompt';
 import { exitProcess } from './exit-process';
 
 interface CliOptions {
@@ -21,6 +27,8 @@ interface CliOptions {
   baseUrl?: string;
   mode?: PermissionMode;
   print?: string;
+  continue?: boolean;
+  resume?: string | boolean;
 }
 
 function fail(message: string): never {
@@ -69,7 +77,65 @@ function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig
     systemPrompt: buildSystemPrompt(cwd),
     cwd,
     permission,
+    transcript: {},
+    maxContextTokens: settings.maxContextTokens,
   };
+}
+
+function formatSessionLine(session: SessionSummary): string {
+  const date = new Date(session.mtimeMs).toLocaleString();
+  const summary = session.summary === '' ? '（无消息）' : session.summary;
+  return `  ${session.sessionId.slice(0, 8)}  ${date}  ${summary}`;
+}
+
+/**
+ * 解析 --continue / --resume：
+ * - 返回 'listed'：已列出候选会话，调用方直接退出（让用户用 --resume <id> 重选）
+ * - 返回 null：没有可恢复的会话，开始新会话
+ */
+function resolveResumeTarget(options: CliOptions, cwd: string): SessionSummary | null | 'listed' {
+  if (options.continue === true) {
+    const sessions = listSessions(cwd);
+    if (sessions.length === 0) {
+      console.error('当前目录没有可恢复的会话，开始新会话');
+      return null;
+    }
+    return sessions[0]!;
+  }
+  if (options.resume === undefined) {
+    return null;
+  }
+  const sessions = listSessions(cwd);
+  if (options.resume === true) {
+    if (sessions.length === 0) {
+      console.error('当前目录没有可恢复的会话，开始新会话');
+      return null;
+    }
+    if (sessions.length === 1) {
+      return sessions[0]!;
+    }
+    console.error('当前目录有多个会话：');
+    for (const session of sessions) {
+      console.error(formatSessionLine(session));
+    }
+    console.error('请用 --resume <sessionId> 指定（可只填前缀）');
+    return 'listed';
+  }
+  if (typeof options.resume !== 'string') {
+    // 不可达：--resume [sessionId] 只会是 string | true（true 已在上面处理）
+    return null;
+  }
+  const id = options.resume;
+  const matches = sessions.filter(
+    (session) => session.sessionId === id || session.sessionId.startsWith(id),
+  );
+  if (matches.length === 0) {
+    fail(`当前目录没有会话 ${id}（--resume 不带参数可列出全部会话）`);
+  }
+  if (matches.length > 1) {
+    fail(`会话 id 前缀 ${id} 匹配到多个会话，请填更长前缀`);
+  }
+  return matches[0]!;
 }
 
 async function action(options: CliOptions): Promise<void> {
@@ -85,6 +151,21 @@ async function action(options: CliOptions): Promise<void> {
     console.error(`⚠ ${warning}`);
   }
 
+  const resumeTarget = resolveResumeTarget(options, cwd);
+  if (resumeTarget === 'listed') {
+    await flushStreams();
+    exitProcess(0);
+    return;
+  }
+  let resumed: ResumedSession | null = null;
+  if (resumeTarget !== null) {
+    try {
+      resumed = resumeSession(resumeTarget.filePath);
+    } catch (error) {
+      fail(errorMessage(error));
+    }
+  }
+
   let providerConfig: ProviderConfig;
   try {
     providerConfig = resolveProviderConfig(loaded.settings);
@@ -98,8 +179,14 @@ async function action(options: CliOptions): Promise<void> {
 
   const provider = createProvider(providerConfig);
   const registry = createBuiltinRegistry();
+  const sessionConfig = buildSessionConfig(loaded.settings, cwd);
+  if (resumed !== null) {
+    sessionConfig.transcript = { sessionId: resumed.sessionId };
+    sessionConfig.initialMessages = resumed.messages;
+    console.error(`已恢复会话 ${resumed.sessionId.slice(0, 8)}（${resumed.messages.length} 条消息）`);
+  }
   const session = new Session({
-    ...buildSessionConfig(loaded.settings, cwd),
+    ...sessionConfig,
     provider,
     tools: registry.list(),
   });
@@ -140,6 +227,8 @@ program
     new Option('--mode <mode>', '权限模式').choices(permissionModeSchema.options),
   )
   .option('-p, --print <prompt>', '无头模式：执行一个 prompt，文本流式输出到 stdout 后退出')
+  .option('-c, --continue', '恢复当前目录最近一次会话')
+  .option('--resume [sessionId]', '恢复指定会话；不带参数时列出候选（多个时选其一）')
   .action((options: CliOptions) => action(options));
 
 try {

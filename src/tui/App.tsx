@@ -7,6 +7,7 @@ import { nextPermissionMode } from '#/core/permission/modes';
 import type { Session } from '#/core/session/session';
 import type { ToolRegistry } from '#/core/tools/registry';
 
+import { isSlashCommand, runSlashCommand, type CommandContext } from './commands';
 import { ApprovalDialog } from './components/ApprovalDialog';
 import { MessageList } from './components/MessageList';
 import { PromptInput } from './components/PromptInput';
@@ -28,10 +29,13 @@ const EXIT_ARM_MS = 3000;
  * - Esc：中断进行中的 turn（审批弹窗打开时由弹窗处理为拒绝）
  * - Shift+Tab：循环切换权限模式（Windows 终端到达为 \x1b[Z，ink 解析为 tab+shift）
  * - Ctrl+C：第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出
+ *
+ * 输入路由：/ 开头走斜杠命令框架（不进 session.submit），其余按 user-turn 提交。
  */
-export function App({ session, registry, model, cwd }: AppProps) {
+export function App({ session, registry, model: initialModel, cwd }: AppProps) {
   const { exit } = useApp();
-  const { state, submit, replyApproval } = useSessionController(session, registry);
+  const { state, submit, replyApproval, notice, clearBlocks } = useSessionController(session, registry);
+  const [model, setModel] = useState(initialModel);
   const [mode, setMode] = useState<PermissionMode>(() => session.getPermissionMode());
   const [exitArmed, setExitArmed] = useState(false);
   const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -82,6 +86,29 @@ export function App({ session, registry, model, cwd }: AppProps) {
     }
   });
 
+  const handleSubmit = (text: string): void => {
+    if (isSlashCommand(text)) {
+      const ctx: CommandContext = {
+        session,
+        busy,
+        notice,
+        clearBlocks,
+        setModel: (next) => {
+          session.setModel(next);
+          setModel(next);
+        },
+        setMode: (next) => {
+          session.setPermissionMode(next);
+          setMode(next);
+        },
+        exit,
+      };
+      void runSlashCommand(text, ctx);
+      return;
+    }
+    submit(text);
+  };
+
   return (
     <Box flexDirection="column">
       <MessageList blocks={state.blocks} />
@@ -99,7 +126,7 @@ export function App({ session, registry, model, cwd }: AppProps) {
         busy={busy}
         queuedCount={state.queuedCount}
         disabled={approval !== null}
-        onSubmit={submit}
+        onSubmit={handleSubmit}
       />
       <StatusBar
         cwd={cwd}

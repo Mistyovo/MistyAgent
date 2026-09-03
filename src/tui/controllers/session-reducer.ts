@@ -76,6 +76,10 @@ export interface SessionUiState {
 
 export type DescribeCall = (name: string, input: unknown) => string;
 
+function formatTokens(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+}
+
 export function initialSessionUiState(): SessionUiState {
   return {
     blocks: [],
@@ -131,6 +135,16 @@ export function reduceStreamSync(state: SessionUiState, text: string, reasoning:
 /** 审批弹窗已回复（UI 动作）：清掉挂起请求 */
 export function reduceApprovalReplied(state: SessionUiState): SessionUiState {
   return state.pendingApproval === null ? state : { ...state, pendingApproval: null };
+}
+
+/** 本地提示上屏（斜杠命令输出等），不进消息历史 */
+export function reduceNotice(state: SessionUiState, text: string): SessionUiState {
+  return pushBlock(state, { kind: 'notice', text });
+}
+
+/** /clear：清空 Static 区 */
+export function reduceClearBlocks(state: SessionUiState): SessionUiState {
+  return { ...state, blocks: [] };
 }
 
 export function reduceEvent(
@@ -228,5 +242,12 @@ export function reduceEvent(
     }
     case 'approval-requested':
       return { ...state, pendingApproval: event.request };
+    case 'compacted':
+      return pushBlock(state, {
+        kind: 'notice',
+        text:
+          `已压缩上下文：${event.beforeCount} → ${event.afterCount} 条消息` +
+          `（约 ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens）`,
+      });
   }
 }

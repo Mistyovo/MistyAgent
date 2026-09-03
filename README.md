@@ -100,3 +100,36 @@ echo $?
 初始模式来自配置 `permissionMode` 或 `--mode`；TUI 内 Shift+Tab 运行时循环切换，
 对后续判定立即生效。审批弹窗选 2（don't ask again）会把该次操作累积为会话级
 allow 规则（bash 按命令首词、write/edit 按文件路径），重启后失效。
+
+### 斜杠命令
+
+TUI 内输入 `/` 开头的命令：
+
+| 命令 | 行为 |
+| --- | --- |
+| `/help` | 列出全部命令 |
+| `/model <name>` | 切换模型（运行时状态，不回写配置） |
+| `/mode [name]` | 切换权限模式；无参数显示当前模式 |
+| `/compact` | 手动压缩上下文（超过阈值时也会自动触发） |
+| `/clear` | 开始新会话（清屏 + 新 transcript） |
+| `/exit` | 退出 |
+
+### 会话恢复
+
+每个会话实时落盘到 `~/.misty/projects/<sanitized-cwd>/<sessionId>.jsonl`
+（用户消息先落盘再调 API，进程被杀也不丢）。恢复：
+
+```bash
+misty --continue          # 恢复最近会话
+misty --resume            # 只有一个会话时直接恢复；多个时列出供选择
+misty --resume <id前缀>   # 恢复指定会话
+```
+
+### 内置工具
+
+read / write / edit / bash / glob / grep / todo / agent。
+`agent` 是子代理工具（`explore` 代码探索、`plan` 实现规划，只读、独立上下文、
+结果回流主会话）；连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
+
+上下文：启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
+system prompt（总量 32KB 截断）。

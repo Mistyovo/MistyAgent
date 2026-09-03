@@ -1,0 +1,192 @@
+import { describe, expect, it } from 'vitest';
+
+import type { AgentEvent } from '#/core/events';
+import {
+  initialSessionUiState,
+  reduceApprovalReplied,
+  reduceEvent,
+  reduceStreamSync,
+  reduceSubmit,
+  type DescribeCall,
+  type SessionUiState,
+  type ToolBlock,
+} from '#/tui/controllers/session-reducer';
+
+const describeCall: DescribeCall = (name) => `desc:${name}`;
+
+function run(state: SessionUiState, ...events: AgentEvent[]): SessionUiState {
+  return events.reduce((current, event) => reduceEvent(current, event, describeCall), state);
+}
+
+const usage = { inputTokens: 10, outputTokens: 5 };
+
+describe('reduceSubmit', () => {
+  it('空闲时提交：上屏 user block，不计排队', () => {
+    const state = reduceSubmit(initialSessionUiState(), 'hello');
+    expect(state.blocks).toHaveLength(1);
+    expect(state.blocks[0]).toMatchObject({ kind: 'user', text: 'hello' });
+    expect(state.queuedCount).toBe(0);
+  });
+
+  it('turn 进行中提交：queuedCount 增加，turn-started 后回落', () => {
+    let state = run(initialSessionUiState(), { type: 'turn-started' });
+    state = reduceSubmit(state, 'first');
+    state = reduceSubmit(state, 'second');
+    expect(state.queuedCount).toBe(2);
+    state = run(state, { type: 'turn-complete', stopReason: 'completed', steps: 1, usage });
+    state = run(state, { type: 'turn-started' });
+    expect(state.queuedCount).toBe(1);
+    state = run(state, { type: 'turn-complete', stopReason: 'completed', steps: 1, usage });
+    state = run(state, { type: 'turn-started' });
+    expect(state.queuedCount).toBe(0);
+  });
+});
+
+describe('reduceEvent 流式聚合', () => {
+  it('text/reasoning delta 累积进 streaming，不落 blocks', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'text-delta', text: 'he' },
+      { type: 'text-delta', text: 'llo' },
+      { type: 'reasoning-delta', text: 'think' },
+    );
+    expect(state.streaming).toEqual({ active: true, text: 'hello', reasoning: 'think' });
+    expect(state.blocks).toHaveLength(0);
+  });
+
+  it('tool-call-started 把流式文本落成 assistant block，再排 running 工具块', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'text-delta', text: '先看看' },
+      { type: 'tool-call-started', toolCallId: 'c1', name: 'bash', input: { command: 'git status' } },
+    );
+    expect(state.blocks).toHaveLength(2);
+    expect(state.blocks[0]).toMatchObject({ kind: 'assistant', text: '先看看' });
+    expect(state.blocks[1]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'c1',
+      description: 'desc:bash',
+      status: 'running',
+    });
+    expect(state.streaming.text).toBe('');
+  });
+
+  it('tool-call-completed 按 toolCallId 更新对应工具块', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'tool-call-started', toolCallId: 'c1', name: 'bash', input: {} },
+      { type: 'tool-call-started', toolCallId: 'c2', name: 'read', input: {} },
+      { type: 'tool-call-completed', toolCallId: 'c2', name: 'read', input: {}, output: 'ok', isError: false, durationMs: 12 },
+    );
+    const c1 = state.blocks.find((b) => b.kind === 'tool' && b.toolCallId === 'c1') as ToolBlock;
+    const c2 = state.blocks.find((b) => b.kind === 'tool' && b.toolCallId === 'c2') as ToolBlock;
+    expect(c1.status).toBe('running');
+    expect(c2).toMatchObject({ status: 'done', output: 'ok', isError: false, durationMs: 12 });
+  });
+
+  it('权限拒绝的调用没有 started 事件：completed 直接落完成块（拒绝在 TUI 可见）', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      {
+        type: 'tool-call-completed',
+        toolCallId: 'c1',
+        name: 'bash',
+        input: { command: 'rm -rf /' },
+        output: '权限拒绝：被 deny 规则拒绝',
+        isError: true,
+        durationMs: 0,
+      },
+    );
+    expect(state.blocks[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'c1',
+      status: 'done',
+      isError: true,
+      output: '权限拒绝：被 deny 规则拒绝',
+    });
+  });
+
+  it('turn-complete 冲刷流式缓冲、复位 active、记录用量', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'text-delta', text: 'done' },
+      { type: 'turn-complete', stopReason: 'completed', steps: 2, usage },
+    );
+    expect(state.streaming).toEqual({ active: false, text: '', reasoning: '' });
+    expect(state.blocks[0]).toMatchObject({ kind: 'assistant', text: 'done' });
+    expect(state.lastUsage).toEqual(usage);
+  });
+
+  it('max-steps 追加 notice block', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'turn-complete', stopReason: 'max-steps', steps: 50, usage },
+    );
+    expect(state.blocks.some((b) => b.kind === 'notice' && b.text.includes('最大步数'))).toBe(true);
+  });
+
+  it('recoverable=false 的 error 结束 turn（此路径没有后续 turn-complete）', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'text-delta', text: 'partial' },
+      { type: 'error', message: 'boom', recoverable: false },
+    );
+    expect(state.streaming.active).toBe(false);
+    expect(state.blocks.map((b) => b.kind)).toEqual(['assistant', 'error']);
+  });
+
+  it('recoverable=true 的 error 只追加 error block，turn 继续', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'error', message: 'retry', recoverable: true },
+    );
+    expect(state.streaming.active).toBe(true);
+    expect(state.blocks[0]).toMatchObject({ kind: 'error', message: 'retry' });
+  });
+
+  it('interrupted 冲刷缓冲、清审批、追加 notice', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'text-delta', text: 'partial' },
+      {
+        type: 'approval-requested',
+        request: { id: 'c1', toolName: 'bash', describeCall: 'Bash x', input: {}, reason: 'r' },
+      },
+      { type: 'interrupted', reason: 'user' },
+    );
+    expect(state.streaming.active).toBe(false);
+    expect(state.pendingApproval).toBeNull();
+    expect(state.blocks.map((b) => b.kind)).toEqual(['assistant', 'notice']);
+  });
+});
+
+describe('审批状态', () => {
+  const request = { id: 'c1', toolName: 'bash', describeCall: 'Bash x', input: {}, reason: 'r' };
+
+  it('approval-requested 挂起，reduceApprovalReplied 清除', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'approval-requested', request },
+    );
+    expect(state.pendingApproval).toEqual(request);
+    state = reduceApprovalReplied(state);
+    expect(state.pendingApproval).toBeNull();
+  });
+});
+
+describe('reduceStreamSync', () => {
+  it('非 active 时忽略缓冲同步', () => {
+    const state = reduceStreamSync(initialSessionUiState(), 'x', 'y');
+    expect(state.streaming).toEqual({ active: false, text: '', reasoning: '' });
+  });
+});

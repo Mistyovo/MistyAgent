@@ -49,3 +49,54 @@ CLI 入口 (commander)
 
 **安全约束：API key 只允许来自环境变量**（`MISTY_API_KEY` 或 `OPENAI_API_KEY`）。
 settings.json 中出现 `provider.apiKey` 会被警告并忽略，禁止把密钥写进任何落盘配置。
+
+## 使用
+
+```bash
+export MISTY_API_KEY=sk-...        # cmd: set MISTY_API_KEY=sk-...
+export MISTY_BASE_URL=https://...  # 可选；MISTY_MODEL 指定模型
+npm run build && node dist/cli.js  # 或开发期 npm run dev
+```
+
+默认启动 TUI。CLI flags：`--model`、`--base-url`、`--mode <权限模式>`、`-p, --print <prompt>`。
+
+### TUI 键位
+
+| 键位 | 行为 |
+| --- | --- |
+| Enter | 提交输入（turn 进行中则进入队列，输入框下方显示排队计数） |
+| ↑ / ↓ | 翻会话内输入历史 |
+| ← / → | 移动输入光标；审批弹窗中移动选项 |
+| Shift+Tab | 循环切换权限模式（状态栏即时反映） |
+| Esc | 中断进行中的 turn；审批弹窗打开时等同拒绝 |
+| 1 / 2 / 3 | 审批弹窗：Yes / Yes 且本会话不再询问同类操作 / No |
+| Ctrl+C | 第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出 |
+
+输入框支持粘贴多行文本（Windows 终端粘贴的 \r\n 会归一化）。
+Windows 终端差异：ConPTY 的 Backspace 到达为 `\x7f`，ink 解析为 delete，
+因此 backspace/delete 统一按"删光标前一个字符"处理。
+
+### 无头模式（print）
+
+`misty -p "<prompt>"` 跑一个 turn 后退出：assistant 文本流式写 stdout，
+工具调用摘要与错误写 stderr，互不污染。审批请求无法交互，自动拒绝并回喂模型说明。
+
+退出码：`completed` → 0；`error` / `max-steps` → 1；`interrupted`（Ctrl+C/SIGINT）→ 130。
+
+```bash
+misty -p "把 README 里的错别字改了" --mode acceptEdits
+echo $?
+```
+
+### 权限模式
+
+| 模式 | 状态栏 | 语义 |
+| --- | --- | --- |
+| `default` | `? default` | 写操作与命令执行需要审批 |
+| `acceptEdits` | `⏵ accept edits` | 文件写/编辑自动放行，bash 仍需审批 |
+| `plan` | `⏸ plan mode` | 只读模式，写/执行直接拒绝（不弹审批） |
+| `bypassPermissions` | `⚠ bypass permissions` | 全部放行，仅受 deny 规则约束 |
+
+初始模式来自配置 `permissionMode` 或 `--mode`；TUI 内 Shift+Tab 运行时循环切换，
+对后续判定立即生效。审批弹窗选 2（don't ask again）会把该次操作累积为会话级
+allow 规则（bash 按命令首词、write/edit 按文件路径），重启后失效。

@@ -2,6 +2,8 @@ import type { ToolCall } from '#/provider/types';
 
 import { errorMessage } from '../errors';
 import type { EventDispatcher } from '../events';
+import type { ApprovalRequest } from '../permission/approval';
+import { evaluatePermission, type PermissionRuntime } from '../permission/pipeline';
 import type { ToolRegistry } from '../tools/registry';
 import { accessesConflict, type ToolAccess, type ToolResult } from '../tools/tool';
 
@@ -20,6 +22,7 @@ export interface ExecuteToolCallsDeps {
   cwd: string;
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
+  permission: PermissionRuntime;
 }
 
 const INTERRUPTED_RESULT: ToolResult = { output: 'interrupted by user', isError: true };
@@ -42,8 +45,13 @@ interface RunningCall extends PendingCall {
  * kimi-code 的 ToolScheduler：按顺序贪心启动，与运行中任务无资源冲突
  * （read vs read）的可并发，写/执行类串行；结果始终按原始顺序返回。
  *
- * 任何失败（参数解析、工具不存在、call 抛异常）都转为 isError 结果，
- * 不会向上抛出。中断时未启动的调用补合成 interrupted 结果。
+ * 权限判定统一在调度前的 preflight 阶段逐个 await（串行）：
+ * deny 与审批 reject 直接落 isError 结果；ask 会 dispatch
+ * approval-requested 事件并挂起等 UI 回复。只有放行的调用进入并发调度，
+ * 因此审批挂起不影响并发安全。
+ *
+ * 任何失败（参数解析、工具不存在、权限拒绝、call 抛异常）都转为 isError
+ * 结果，不会向上抛出。中断时未启动的调用补合成 interrupted 结果。
  */
 export async function executeToolCalls(
   toolCalls: ToolCall[],
@@ -71,8 +79,40 @@ export async function executeToolCalls(
     });
   };
 
-  /** 参数解析与工具查找；失败直接落结果，返回 null 表示不进入调度 */
-  const preflight = (index: number): PendingCall | null => {
+  /** ask 分支：dispatch 事件并挂起等 UI 回复；返回 true 表示放行执行 */
+  const askApproval = async (
+    index: number,
+    toolCall: ToolCall,
+    input: unknown,
+    reason: string,
+  ): Promise<boolean> => {
+    const tool = deps.registry.get(toolCall.name)!;
+    const request: ApprovalRequest = {
+      id: toolCall.id,
+      toolName: tool.name,
+      describeCall: tool.describeCall(input),
+      input,
+      reason,
+    };
+    // 先挂起再发事件：监听器可能在 dispatch 期间同步回复
+    const replyPromise = deps.permission.approvals.request(request);
+    deps.dispatchEvent({ type: 'approval-requested', request });
+    const reply = await replyPromise;
+    if (reply.decision !== 'reject') {
+      // 'always' 的会话规则由 ApprovalManager.reply 写入
+      return true;
+    }
+    const output = deps.signal.aborted
+      ? INTERRUPTED_RESULT.output
+      : `用户拒绝了本次操作${
+          reply.feedback !== undefined && reply.feedback !== '' ? `：${reply.feedback}` : ''
+        }`;
+    record(index, toolCall, input, errorOf(output), 0, false);
+    return false;
+  };
+
+  /** 参数解析、工具查找与权限判定；失败直接落结果，返回 null 表示不进入调度 */
+  const preflight = async (index: number): Promise<PendingCall | null> => {
     const toolCall = toolCalls[index]!;
     let input: unknown = toolCall.arguments;
     try {
@@ -84,6 +124,14 @@ export async function executeToolCalls(
     const tool = deps.registry.get(toolCall.name);
     if (tool === undefined) {
       record(index, toolCall, input, errorOf(`未知工具：${toolCall.name}`), 0, false);
+      return null;
+    }
+    const decision = evaluatePermission(tool, input, deps.permission.getContext());
+    if (decision.kind === 'deny') {
+      record(index, toolCall, input, errorOf(`权限拒绝：${decision.reason}`), 0, false);
+      return null;
+    }
+    if (decision.kind === 'ask' && !(await askApproval(index, toolCall, input, decision.reason))) {
       return null;
     }
     return { index, toolCall, input, accesses: tool.accesses(input) };
@@ -113,7 +161,18 @@ export async function executeToolCalls(
   const running: RunningCall[] = [];
   const pendings: PendingCall[] = [];
   for (let index = 0; index < toolCalls.length; index += 1) {
-    const pending = preflight(index);
+    if (deps.signal.aborted) {
+      const toolCall = toolCalls[index]!;
+      let input: unknown = toolCall.arguments;
+      try {
+        input = JSON.parse(toolCall.arguments);
+      } catch {
+        // input 保留原始字符串
+      }
+      record(index, toolCall, input, INTERRUPTED_RESULT, 0, true);
+      continue;
+    }
+    const pending = await preflight(index);
     if (pending !== null) {
       pendings.push(pending);
     }

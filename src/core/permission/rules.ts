@@ -1,0 +1,110 @@
+import path from 'node:path';
+
+import picomatch from 'picomatch';
+
+import type { PermissionRule } from '#/config/schema';
+
+/** bash 工具的命令参数；非法 input 返回 null（不匹配任何带 pattern 的规则） */
+export function extractCommand(input: unknown): string | null {
+  if (typeof input === 'object' && input !== null && 'command' in input) {
+    const command = (input as { command: unknown }).command;
+    if (typeof command === 'string') {
+      return command.trim();
+    }
+  }
+  return null;
+}
+
+/** read/write/edit/glob/grep 的路径参数；非法 input 返回 null */
+export function extractPath(input: unknown): string | null {
+  if (typeof input === 'object' && input !== null && 'path' in input) {
+    const inputPath = (input as { path: unknown }).path;
+    if (typeof inputPath === 'string') {
+      return inputPath;
+    }
+  }
+  return null;
+}
+
+function compileGlob(pattern: string): ((value: string) => boolean) | null {
+  try {
+    return picomatch(pattern, { dot: true });
+  } catch {
+    return null;
+  }
+}
+
+function matchBashPattern(pattern: string, command: string): boolean {
+  const isMatch = compileGlob(pattern);
+  if (isMatch === null) {
+    return false;
+  }
+  if (isMatch(command)) {
+    return true;
+  }
+  // 前缀语义：'git *' 同时覆盖裸命令 'git'
+  return pattern.endsWith(' *') && command === pattern.slice(0, -2);
+}
+
+function matchPathPattern(pattern: string, inputPath: string, cwd: string): boolean {
+  const isMatch = compileGlob(pattern);
+  if (isMatch === null) {
+    return false;
+  }
+  const absolute = path.isAbsolute(inputPath)
+    ? path.normalize(inputPath)
+    : path.resolve(cwd, inputPath);
+  // 相对候选匹配 'src/**' 类规则；绝对候选兼容规则里写绝对路径的情况
+  const relative = path.relative(cwd, absolute).split(path.sep).join('/');
+  const normalizedAbsolute = absolute.split(path.sep).join('/');
+  return isMatch(relative) || isMatch(normalizedAbsolute);
+}
+
+/**
+ * 规则匹配（对齐 Claude Code）：
+ * - tool 名大小写不敏感：配置里习惯写 Claude Code 风格的 "Bash"，内置工具是小写
+ * - 无 pattern：匹配该工具的全部调用
+ * - bash：pattern 是命令前缀 glob，'git *' 覆盖 'git …' 与裸 'git'；
+ *   精确 pattern（如 'git status'）只匹配该命令本身
+ * - 其余工具：pattern 是文件路径 glob，取 input.path 相对 cwd 匹配
+ */
+export function matchRule(
+  rule: PermissionRule,
+  toolName: string,
+  input: unknown,
+  cwd: string,
+): boolean {
+  if (rule.tool.toLowerCase() !== toolName.toLowerCase()) {
+    return false;
+  }
+  if (rule.pattern === undefined) {
+    return true;
+  }
+  if (toolName === 'bash') {
+    const command = extractCommand(input);
+    return command !== null && matchBashPattern(rule.pattern, command);
+  }
+  const inputPath = extractPath(input);
+  return inputPath !== null && matchPathPattern(rule.pattern, inputPath, cwd);
+}
+
+/**
+ * 查找指定 action 下第一条命中的规则（数组顺序先匹配优先）。
+ * deny > ask > allow 的跨 action 优先级由 pipeline 按序调用本函数实现。
+ */
+export function findMatchingRule(
+  rules: readonly PermissionRule[],
+  action: PermissionRule['action'],
+  toolName: string,
+  input: unknown,
+  cwd: string,
+): PermissionRule | undefined {
+  return rules.find(
+    (rule) => rule.action === action && matchRule(rule, toolName, input, cwd),
+  );
+}
+
+/** 展示用，如 Bash(git *)、Write(src/a.ts)、Read */
+export function describeRule(rule: PermissionRule): string {
+  return rule.pattern === undefined ? rule.tool : `${rule.tool}(${rule.pattern})`;
+}

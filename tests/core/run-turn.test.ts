@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import type { AgentEvent } from '#/core/events';
 import { runTurn, type RunTurnDeps } from '#/core/loop/run-turn';
+import { createPermissionRuntime } from '#/core/permission/pipeline';
 import { builtinTools } from '#/core/tools/builtin/index';
 import { defineTool, type Tool, type ToolContext } from '#/core/tools/tool';
 import type { AssistantMessage, ToolMessage } from '#/provider/types';
@@ -21,15 +22,18 @@ function makeDeps(
   events: AgentEvent[],
   overrides?: Partial<RunTurnDeps>,
 ): RunTurnDeps {
+  const effectiveCwd = overrides?.cwd ?? cwd;
   return {
     provider,
     model: 'fake-model',
     systemPrompt: 'system',
     messages: [{ role: 'user', content: 'hi' }],
     tools,
-    cwd,
+    cwd: effectiveCwd,
     signal: new AbortController().signal,
     dispatchEvent: (event) => events.push(event),
+    // 与权限无关的用例默认全部放行
+    permission: createPermissionRuntime({ mode: 'bypassPermissions', cwd: effectiveCwd }),
     ...overrides,
   };
 }

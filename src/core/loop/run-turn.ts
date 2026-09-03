@@ -1,6 +1,7 @@
 import type { ChatProvider, Message, TokenUsage } from '#/provider/types';
 
 import type { EventDispatcher, TurnStopReason } from '../events';
+import type { PermissionRuntime } from '../permission/pipeline';
 import { ToolRegistry } from '../tools/registry';
 import type { Tool } from '../tools/tool';
 
@@ -18,6 +19,7 @@ export interface RunTurnDeps {
   maxSteps?: number | undefined;
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
+  permission: PermissionRuntime;
 }
 
 export interface RunTurnResult {
@@ -154,6 +156,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       cwd: deps.cwd,
       signal: deps.signal,
       dispatchEvent: deps.dispatchEvent,
+      permission: deps.permission,
     });
     for (const { toolCall, result } of results) {
       const message: Message = {

@@ -15,6 +15,8 @@ function makeSession(provider: FakeProvider, tools: Tool[] = []): Session {
     systemPrompt: 'system',
     tools,
     cwd: process.cwd(),
+    // 与权限无关的用例全部放行，避免挂起等审批
+    permission: { mode: 'bypassPermissions' },
   });
 }
 

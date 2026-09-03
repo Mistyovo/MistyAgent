@@ -1,5 +1,7 @@
 import type { FinishReason, TokenUsage } from '#/provider/types';
 
+import type { ApprovalRequest } from './permission/approval';
+
 export interface TurnStartedEvent {
   type: 'turn-started';
 }
@@ -61,6 +63,12 @@ export interface InterruptedEvent {
   reason: 'user';
 }
 
+/** 工具调用需要用户审批时发出；UI 弹窗后以 approval-reply Op 回复 */
+export interface ApprovalRequestedEvent {
+  type: 'approval-requested';
+  request: ApprovalRequest;
+}
+
 export type AgentEvent =
   | TurnStartedEvent
   | TurnCompleteEvent
@@ -70,7 +78,8 @@ export type AgentEvent =
   | ToolCallCompletedEvent
   | StepFinishedEvent
   | ErrorEvent
-  | InterruptedEvent;
+  | InterruptedEvent
+  | ApprovalRequestedEvent;
 
 export type EventListener = (event: AgentEvent) => void;
 export type EventDispatcher = (event: AgentEvent) => void;

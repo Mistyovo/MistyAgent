@@ -115,8 +115,11 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   });
 
   const detail = approvalDetailLines(request);
+  // 边框用 classic（ASCII + - |）：round/single 的 ─│╭ 等是 East Asian Ambiguous
+  // 字符，在中文 cmd.exe 老式 conhost 按 2 格渲染，长内容时边框行物理换行，
+  // 与 ink 行高预算错位会导致 eraseLines 残帧
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" borderStyle="classic" borderColor="yellow" paddingX={1} marginTop={1}>
       <Text bold color="yellow">
         需要审批：{request.describeCall}
       </Text>

@@ -50,17 +50,21 @@ function BlockView({ block }: { block: UiBlock }) {
         </Box>
       );
     }
-    case 'assistant':
+    case 'assistant': {
+      // 流式缓冲冲刷时尾部可能带换行，直接渲染会在 Static 区留下永久空行
+      const reasoning = block.reasoning?.trimEnd() ?? null;
+      const text = block.text.trimEnd();
       return (
         <Box flexDirection="column">
-          {block.reasoning !== null && (
+          {reasoning !== null && reasoning !== '' && (
             <Text dimColor italic>
-              {block.reasoning}
+              {reasoning}
             </Text>
           )}
-          {block.text !== '' && <Text>{block.text}</Text>}
+          {text !== '' && <Text>{text}</Text>}
         </Box>
       );
+    }
     case 'tool':
       return <ToolBlockView block={block} />;
     case 'error':

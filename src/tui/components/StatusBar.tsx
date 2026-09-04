@@ -21,12 +21,15 @@ export function formatTokenCount(count: number): string {
   return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
-/** 底栏：cwd basename · 模型 · 权限模式（M3 元数据的符号+颜色）· token 用量 */
+/** 底栏：cwd basename · 模型 · 权限模式（M3 元数据的符号+颜色）· token 用量。
+ *  不画边框线：box-drawing 字符（─│ 等 East Asian Ambiguous）在中文 cmd.exe
+ *  老式 conhost 里按 2 格渲染，满宽边框行会物理换行、与 ink 的行高预算错位，
+ *  eraseLines 逐帧少擦导致残帧/空白累积 */
 export function StatusBar({ cwd, model, mode, usage, busy, exitArmed }: StatusBarProps) {
   const meta = permissionModeMeta[mode];
   const basename = path.basename(cwd) || cwd;
   return (
-    <Box borderTop borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+    <Box marginTop={1} paddingX={1}>
       <Text dimColor>{basename}</Text>
       <Text dimColor>{`  ${model}  `}</Text>
       <Text color={meta.color}>{`${meta.symbol} ${meta.label}`}</Text>

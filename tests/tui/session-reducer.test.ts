@@ -182,6 +182,21 @@ describe('reduceEvent 流式聚合', () => {
     expect(state.blocks[0]).toMatchObject({ kind: 'notice' });
     expect((state.blocks[0] as { text: string }).text).toContain('12 → 5');
   });
+
+  it('model-fallback 落暗色 notice（含 from/to 与原因），不影响 streaming', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'model-fallback', from: 'primary', to: 'backup-a', reason: 'model not found' },
+    );
+    expect(state.streaming.active).toBe(true);
+    expect(state.blocks).toHaveLength(1);
+    expect(state.blocks[0]).toMatchObject({ kind: 'notice' });
+    const text = (state.blocks[0] as { text: string }).text;
+    expect(text).toContain('primary');
+    expect(text).toContain('backup-a');
+    expect(text).toContain('model not found');
+  });
 });
 
 describe('弹窗队列', () => {

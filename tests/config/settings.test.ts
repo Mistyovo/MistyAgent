@@ -135,6 +135,20 @@ describe('loadSettings', () => {
     ]);
   });
 
+  it('fallbackModels 跨层拼接：user < project < CLI flags', () => {
+    writeSettings(userDir, { fallbackModels: ['user-backup'] });
+    writeSettings(projectDir, { fallbackModels: ['project-backup'] });
+    const { settings } = load({ fallbackModels: ['cli-backup'] });
+    expect(settings.fallbackModels).toEqual(['user-backup', 'project-backup', 'cli-backup']);
+  });
+
+  it('fallbackModels 校验：空字符串 / 非数组均报配置无效', () => {
+    writeSettings(projectDir, { fallbackModels: [''] });
+    expect(() => load()).toThrowError(/配置无效/);
+    writeSettings(projectDir, { fallbackModels: 'not-an-array' });
+    expect(() => load()).toThrowError(/配置无效/);
+  });
+
   it('合并结果不合法时抛错', () => {
     writeSettings(projectDir, { temperature: 5 });
     expect(() => load()).toThrowError(/配置无效/);

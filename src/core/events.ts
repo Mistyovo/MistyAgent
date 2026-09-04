@@ -108,6 +108,18 @@ export interface CompactedEvent {
   afterTokens: number;
 }
 
+/**
+ * 主模型失败后自动切换到 fallbackModels 链上的下一个模型时发出；
+ * 仅当前 turn 生效，新 turn 从主模型重新开始
+ */
+export interface ModelFallbackEvent {
+  type: 'model-fallback';
+  from: string;
+  to: string;
+  /** 触发切换的错误消息 */
+  reason: string;
+}
+
 /** todo 工具全量替换任务列表后发出，携带最新全量 todos */
 export interface TodosUpdatedEvent {
   type: 'todos-updated';
@@ -160,6 +172,7 @@ export type AgentEvent =
   | PlanApprovalRequestedEvent
   | PlanModeChangedEvent
   | CompactedEvent
+  | ModelFallbackEvent
   | TodosUpdatedEvent
   | TaskStartedEvent
   | TaskFinishedEvent

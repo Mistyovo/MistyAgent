@@ -40,12 +40,25 @@ CLI 入口 (commander)
 // .misty/settings.json
 {
   "provider": { "type": "openai", "baseURL": "https://api.example.com/v1", "defaultModel": "kimi-k2" },
+  "fallbackModels": ["kimi-k1.5", "gpt-5-mini"],  // 主模型失败时依次降级的备用模型
   "permissionMode": "default",           // default | acceptEdits | plan | bypassPermissions
   "permissionRules": [{ "action": "deny", "tool": "write_file", "pattern": "*.env" }],
   "maxTokens": 8192,
   "temperature": 0.6
 }
 ```
+
+**错误恢复**（对标 Claude Code）：
+
+- **传输层重试**：429 / 408 / 5xx / 网络错误在流出任何内容前按指数退避重试（1s/2s/4s，3 次）
+- **max_tokens 截断升级**：响应 finish_reason 为 `length` 且未流出可见内容时，maxTokens
+  自动翻倍重发该步（默认 8192 → 16384 → 32768 → 65536 封顶，最多升级 3 次）；
+  已流出部分内容则不重发（避免重复上屏），turn 照常推进；超过封顶以 error 收尾
+- **模型 fallback 链**：不可重试错误（400/401/403/404 等）或单模型重试耗尽后，自动按
+  `fallbackModels` 顺序切换备用模型重试该步，每个模型有独立的传输层重试预算。
+  上下文溢出（context-overflow）优先走响应式压缩，不消耗 fallback 链。
+  切换发出 `model-fallback` 事件（TUI 落暗色提示、状态栏模型名更新；print 模式写 stderr）。
+  **fallback 仅当前 turn 生效**：后续 step 沿用切换后的模型，新 turn 从主模型重新开始
 
 **安全约束：API key 只允许来自环境变量**（`MISTY_API_KEY` 或 `OPENAI_API_KEY`）。
 settings.json 中出现 `provider.apiKey` 会被警告并忽略，禁止把密钥写进任何落盘配置。
@@ -109,7 +122,8 @@ export MISTY_BASE_URL=https://...  # 可选；MISTY_MODEL 指定模型
 npm run build && node dist/cli.js  # 或开发期 npm run dev
 ```
 
-默认启动 TUI。CLI flags：`--model`、`--base-url`、`--mode <权限模式>`、`-p, --print <prompt>`。
+默认启动 TUI。CLI flags：`--model`、`--fallback <model>`（可多次使用，追加到 fallbackModels 链尾）、
+`--base-url`、`--mode <权限模式>`、`-p, --print <prompt>`。
 
 ### TUI 键位
 

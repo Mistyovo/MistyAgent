@@ -51,12 +51,19 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
   const busy = state.streaming.active;
   const dialog = state.pendingDialogs[0] ?? null;
 
-  // 计划模式进/退可由模型工具在 turn 内触发（权限模式随之切换），状态栏经事件同步
+  // 计划模式进/退可由模型工具在 turn 内触发（权限模式随之切换），状态栏经事件同步；
+  // 模型 fallback 仅当前 turn 生效（session 模型不变），状态栏跟随事件，turn 结束回读主模型
   useEffect(
     () =>
       session.onEvent((event) => {
         if (event.type === 'plan-mode-changed') {
           setMode(event.mode);
+        }
+        if (event.type === 'model-fallback') {
+          setModel(event.to);
+        }
+        if (event.type === 'turn-complete') {
+          setModel(session.getModel());
         }
       }),
     [session],

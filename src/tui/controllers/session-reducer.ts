@@ -284,6 +284,11 @@ export function reduceEvent(
           `已压缩上下文：${event.beforeCount} → ${event.afterCount} 条消息` +
           `（约 ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens）`,
       });
+    case 'model-fallback':
+      return pushBlock(state, {
+        kind: 'notice',
+        text: `模型 ${event.from} 失败，已切换到 ${event.to}：${event.reason}`,
+      });
     case 'todos-updated':
       return { ...state, todos: event.todos };
     case 'task-started':

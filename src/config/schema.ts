@@ -63,6 +63,8 @@ export const settingsSchema = z.object({
   permissionMode: permissionModeSchema.optional(),
   permissionRules: z.array(permissionRuleSchema).optional(),
   maxTokens: z.number().int().positive().optional(),
+  /** 主模型失败时依次降级的备用模型链（数组在分层合并时拼接累加；仅当前 turn 生效） */
+  fallbackModels: z.array(z.string().min(1)).optional(),
   /** 上下文压缩的 token 上限基数（估算超过 80% 时触发），缺省 100000 */
   maxContextTokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),

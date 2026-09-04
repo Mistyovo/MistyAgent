@@ -353,4 +353,64 @@ describe('App 交互（ink-testing-library）', () => {
     expect(session.isPlanMode()).toBe(false);
     expect(session.getPermissionMode()).toBe('bypassPermissions');
   });
+
+  it('模型 fallback：状态栏切到备用模型并落提示，turn 结束后回到主模型', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    // 第二次响应手动控速，留出观察状态栏 fallback 中间态的窗口
+    const provider: ChatProvider = {
+      async *generate() {
+        calls += 1;
+        if (calls === 1) {
+          yield {
+            type: 'error' as const,
+            error: Object.assign(new Error('model not found'), { status: 404 }),
+          };
+          return;
+        }
+        await gate;
+        yield { type: 'text-delta' as const, text: '备用模型完成' };
+        yield {
+          type: 'done' as const,
+          usage: null,
+          finishReason: 'completed' as const,
+          rawFinishReason: 'stop',
+        };
+      },
+    };
+    const registry = createBuiltinRegistry();
+    const session = new Session({
+      provider,
+      model: 'primary-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      fallbackModels: ['backup-model'],
+    });
+    const { lastFrame, stdin } = render(
+      <App session={session} registry={registry} model="primary-model" cwd={process.cwd()} />,
+    );
+
+    expect(lastFrame()).toContain('primary-model  ? default');
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    // fallback 后、备用模型响应到达前：状态栏是备用模型，Static 区有切换提示
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('已切换到 backup-model');
+      expect(lastFrame()).toContain('backup-model  ? default');
+    });
+    release();
+    // fallback 仅当前 turn 生效：turn 结束后状态栏回到 session 主模型
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('备用模型完成');
+      expect(lastFrame()).toContain('primary-model  ? default');
+    });
+    expect(session.getModel()).toBe('primary-model');
+  });
 });

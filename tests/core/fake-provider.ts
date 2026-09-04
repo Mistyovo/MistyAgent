@@ -11,6 +11,7 @@ export interface RecordedRequest {
   systemPrompt: string;
   messages: Message[];
   tools: ToolDefinition[];
+  maxTokens: number | undefined;
 }
 
 /** 可编程的 ChatProvider：每次 generate 消费一个预设的 part 序列 */
@@ -28,6 +29,7 @@ export class FakeProvider implements ChatProvider {
       systemPrompt: params.systemPrompt,
       messages: structuredClone(params.messages),
       tools: params.tools,
+      maxTokens: params.maxTokens,
     });
     const script = this.scripts.length > 0 ? this.scripts.shift()! : undefined;
     if (script === undefined) {

@@ -54,6 +54,10 @@ export interface SessionConfig {
   initialMessages?: Message[] | undefined;
   /** 自动压缩阈值基数，缺省 DEFAULT_MAX_CONTEXT_TOKENS */
   maxContextTokens?: number | undefined;
+  /** 输出 token 上限初值（缺省 8192）；length 截断时自动翻倍升级，封顶 65536 */
+  maxTokens?: number | undefined;
+  /** 主模型失败时依次降级的备用模型链（settings.fallbackModels / --fallback）；仅当前 turn 生效 */
+  fallbackModels?: string[] | undefined;
   /** 会话级 todo 存储（todo 工具全量替换它）；变更被转发为 todos-updated 事件 */
   todos?: TodoStore | undefined;
   /**
@@ -450,6 +454,8 @@ export class Session {
       tools: this.config.tools,
       cwd: this.config.cwd,
       maxSteps: this.config.maxSteps,
+      maxTokens: this.config.maxTokens,
+      fallbackModels: this.config.fallbackModels,
       signal: controller.signal,
       dispatchEvent: (event) => {
         this.dispatch(event);

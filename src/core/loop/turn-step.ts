@@ -24,6 +24,10 @@ export interface ExecuteStepDeps {
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
   retry?: ChatWithRetryOptions | undefined;
+  /** 输出 token 上限；length 截断的翻倍升级由 runTurn 负责（重发本步） */
+  maxTokens?: number | undefined;
+  /** runTurn 的 fallback 链未耗尽：流失败事件标 recoverable（turn 不因此结束） */
+  fallbackAvailable?: boolean | undefined;
 }
 
 export interface StepOutcome {
@@ -34,6 +38,8 @@ export interface StepOutcome {
   finishReason: FinishReason | null;
   /** 流以 error part 结束（重试已耗尽）；此时 toolCalls 可能是残缺的 */
   errored: boolean;
+  /** errored 时的错误消息（fallback 事件的 reason） */
+  errorMessage?: string | undefined;
   /** 错误为「prompt 超出上下文」类：runTurn 可触发响应式压缩后重试本步 */
   contextOverflow: boolean;
 }
@@ -55,6 +61,7 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
   let usage: TokenUsage | null = null;
   let finishReason: FinishReason | null = null;
   let errored = false;
+  let failureMessage: string | undefined;
   let contextOverflow = false;
 
   const stream = chatWithRetry(
@@ -64,6 +71,7 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
       systemPrompt: deps.systemPrompt,
       messages: [...deps.messages],
       tools: deps.tools,
+      maxTokens: deps.maxTokens,
       signal: deps.signal,
     },
     deps.retry,
@@ -96,11 +104,12 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
       case 'error':
         errored = true;
         contextOverflow = isContextOverflowError(part.error);
+        failureMessage = errorMessage(part.error);
         deps.dispatchEvent({
           type: 'error',
-          message: errorMessage(part.error),
-          // 溢出错误可能经压缩恢复，由 runTurn 在放弃重试时补发 recoverable=false
-          recoverable: contextOverflow,
+          message: failureMessage,
+          // 溢出/待降级错误可能经 runTurn 恢复；runTurn 放弃时补发 recoverable=false
+          recoverable: contextOverflow || deps.fallbackAvailable === true,
         });
         break;
     }
@@ -110,5 +119,14 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
     .toSorted(([left], [right]) => left - right)
     .map(([, buffer]) => ({ ...buffer }));
   deps.dispatchEvent({ type: 'step-finished', step: deps.step, usage, finishReason });
-  return { text, reasoning, toolCalls, usage, finishReason, errored, contextOverflow };
+  return {
+    text,
+    reasoning,
+    toolCalls,
+    usage,
+    finishReason,
+    errored,
+    errorMessage: failureMessage,
+    contextOverflow,
+  };
 }

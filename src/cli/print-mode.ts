@@ -81,6 +81,9 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
       case 'error':
         stderr.write(`✗ ${event.message}\n`);
         break;
+      case 'model-fallback':
+        stderr.write(`⚠ 模型 ${event.from} 失败，切换到 ${event.to}：${event.reason}\n`);
+        break;
       case 'turn-complete':
         if (event.stopReason === 'max-steps') {
           stderr.write(`✗ 已达到最大步数（${event.steps} 步），任务未正常收尾\n`);

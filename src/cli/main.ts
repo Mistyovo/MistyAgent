@@ -1,11 +1,10 @@
 import { Command, Option } from 'commander';
 
-import { permissionModeSchema, type PermissionMode, type Settings } from '#/config/schema';
+import { permissionModeSchema, type Settings } from '#/config/schema';
 import {
   loadSettings,
   resolveProviderConfig,
   type LoadedSettings,
-  type SettingsOverrides,
 } from '#/config/settings';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { McpManager } from '#/core/mcp/manager';
@@ -24,17 +23,9 @@ import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
 
+import { buildOverrides, collect, type CliOptions } from './options';
 import { runPrintMode } from './print-mode';
 import { exitProcess } from './exit-process';
-
-interface CliOptions {
-  model?: string;
-  baseUrl?: string;
-  mode?: PermissionMode;
-  print?: string;
-  continue?: boolean;
-  resume?: string | boolean;
-}
 
 function fail(message: string): never {
   console.error(`✗ ${message}`);
@@ -54,21 +45,6 @@ function flushStreams(): Promise<void> {
   return Promise.all([flush(process.stdout), flush(process.stderr)]).then(() => undefined);
 }
 
-function buildOverrides(options: CliOptions): SettingsOverrides {
-  const provider: NonNullable<SettingsOverrides['provider']> = {};
-  if (options.baseUrl !== undefined) {
-    provider.baseURL = options.baseUrl;
-  }
-  if (options.model !== undefined) {
-    provider.defaultModel = options.model;
-  }
-  const overrides: SettingsOverrides = { provider };
-  if (options.mode !== undefined) {
-    overrides.permissionMode = options.mode;
-  }
-  return overrides;
-}
-
 function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig, 'provider' | 'tools'> {
   const permission: NonNullable<SessionConfig['permission']> = {};
   if (settings.permissionMode !== undefined) {
@@ -83,7 +59,9 @@ function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig
     cwd,
     permission,
     transcript: {},
+    maxTokens: settings.maxTokens,
     maxContextTokens: settings.maxContextTokens,
+    fallbackModels: settings.fallbackModels,
     hooks: settings.hooks,
   };
 }
@@ -290,6 +268,12 @@ program
   .description('Misty — 私人定制 CLI coding agent（OpenAI 兼容 API）')
   .version('0.1.0')
   .option('--model <model>', '覆盖默认模型（等价于 MISTY_MODEL）')
+  .option(
+    '--fallback <model>',
+    '追加备用模型：主模型失败时按添加顺序降级（可多次使用，仅当前 turn 生效）',
+    collect,
+    [] as string[],
+  )
   .option('--base-url <url>', '覆盖 API base URL（等价于 MISTY_BASE_URL）')
   .addOption(
     new Option('--mode <mode>', '权限模式').choices(permissionModeSchema.options),

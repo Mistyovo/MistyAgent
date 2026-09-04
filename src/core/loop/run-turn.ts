@@ -7,6 +7,7 @@ import { ToolRegistry } from '../tools/registry';
 import type { Tool } from '../tools/tool';
 
 import { DoomLoopDetector } from './doom-loop';
+import type { ChatWithRetryOptions } from './retry';
 import { executeToolCalls } from './tool-scheduler';
 import { executeStep, type StepOutcome } from './turn-step';
 
@@ -29,6 +30,12 @@ export interface RunTurnDeps {
   tools: Tool[];
   cwd: string;
   maxSteps?: number | undefined;
+  /** 输出 token 上限初值，缺省 DEFAULT_MAX_TOKENS；length 截断时自动翻倍升级 */
+  maxTokens?: number | undefined;
+  /** 主模型失败后的备用模型链：不可重试错误 / chatWithRetry 耗尽后依次降级，仅当前 turn 生效 */
+  fallbackModels?: string[] | undefined;
+  /** 单模型内的传输层重试配置（每个模型独立预算）；测试注入 noop sleep */
+  retry?: ChatWithRetryOptions | undefined;
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
   permission: PermissionRuntime;
@@ -45,6 +52,11 @@ export interface RunTurnResult {
 const DEFAULT_MAX_STEPS = 50;
 /** context-overflow 后的「压缩 + 重试本步」次数上限，防连续溢出死循环 */
 const MAX_OVERFLOW_RETRIES = 2;
+/** 输出 token 上限初值（对齐 Claude Code 的 8k 起点） */
+const DEFAULT_MAX_TOKENS = 8192;
+/** length 截断时 maxTokens 自动翻倍升级的次数上限与封顶（8k→16k→32k→64k） */
+const MAX_LENGTH_ESCALATIONS = 3;
+const MAX_TOKENS_CAP = 65536;
 
 function addUsage(total: TokenUsage, usage: TokenUsage | null): void {
   if (usage === null) {
@@ -124,6 +136,13 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
   let steps = 0;
   let finalStepForced = false;
   let overflowRetries = 0;
+  // length 升级与 fallback 都是 turn 级状态：升级后的 maxTokens 与切换后的模型
+  // 被本 turn 后续 step 沿用（不弹回）；新 turn 重新从配置值开始
+  let currentMaxTokens = deps.maxTokens ?? DEFAULT_MAX_TOKENS;
+  let lengthEscalations = 0;
+  const fallbackModels = deps.fallbackModels ?? [];
+  let fallbackIndex = 0;
+  let fallbackModel: string | null = null;
 
   const pushMessage = (message: Message): void => {
     deps.messages.push(message);
@@ -166,20 +185,25 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       return interrupt();
     }
     steps += 1;
+    const stepModel = fallbackModel ?? deps.getModel?.() ?? deps.model;
     const outcome = await executeStep({
       provider: deps.provider,
-      model: deps.getModel?.() ?? deps.model,
+      model: stepModel,
       systemPrompt: deps.getSystemPrompt?.() ?? deps.systemPrompt,
       messages: deps.messages,
       tools: finalStepForced ? [] : definitions,
       step: steps,
       signal: deps.signal,
       dispatchEvent: deps.dispatchEvent,
+      retry: deps.retry,
+      maxTokens: currentMaxTokens,
+      fallbackAvailable: fallbackIndex < fallbackModels.length,
     });
     addUsage(usage, outcome.usage);
 
     if (outcome.errored) {
       appendAssistantMessage(pushMessage, outcome, true);
+      // 溢出压缩优先于 fallback：溢出是上下文体积问题，换模型解决不了
       if (outcome.contextOverflow && !deps.signal.aborted) {
         if (overflowRetries < MAX_OVERFLOW_RETRIES) {
           overflowRetries += 1;
@@ -196,7 +220,44 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
           message: '上下文超出模型限制，压缩重试后仍失败',
           recoverable: false,
         });
+        return finish('error');
       }
+      if (!outcome.contextOverflow && !deps.signal.aborted) {
+        const nextModel = fallbackModels[fallbackIndex];
+        if (nextModel !== undefined) {
+          fallbackIndex += 1;
+          fallbackModel = nextModel;
+          deps.dispatchEvent({
+            type: 'model-fallback',
+            from: stepModel,
+            to: nextModel,
+            reason: outcome.errorMessage ?? '模型请求失败',
+          });
+          continue;
+        }
+      }
+      return finish('error');
+    }
+    // length 截断（max_tokens 打满）：仅当本步未流出任何可见内容时翻倍 maxTokens
+    // 重发整个请求——此时重试无重复内容的副作用；已流出部分输出则保留现状
+    // （重发会重复已上屏内容），turn 照常推进
+    if (
+      outcome.finishReason === 'length' &&
+      outcome.text === '' &&
+      outcome.reasoning === '' &&
+      outcome.toolCalls.length === 0 &&
+      !deps.signal.aborted
+    ) {
+      if (lengthEscalations < MAX_LENGTH_ESCALATIONS && currentMaxTokens < MAX_TOKENS_CAP) {
+        lengthEscalations += 1;
+        currentMaxTokens = Math.min(currentMaxTokens * 2, MAX_TOKENS_CAP);
+        continue;
+      }
+      deps.dispatchEvent({
+        type: 'error',
+        message: `输出被 max_tokens 截断：已自动升级到封顶 ${MAX_TOKENS_CAP} 仍未完成`,
+        recoverable: false,
+      });
       return finish('error');
     }
     if (deps.signal.aborted) {

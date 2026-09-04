@@ -125,6 +125,37 @@ describe('runPrintMode', () => {
     expect(stderr).toContain('✗ boom');
   });
 
+  it('模型 fallback：切换提示写 stderr，备用模型跑完 turn，退出码 0', async () => {
+    const provider = new FakeProvider([
+      [{ type: 'error', error: Object.assign(new Error('model not found'), { status: 404 }) }],
+      textStep('备用模型收尾'),
+    ]);
+    const registry = createBuiltinRegistry();
+    const session = new Session({
+      provider,
+      model: 'primary',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      fallbackModels: ['backup-a'],
+    });
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout.text()).toBe('备用模型收尾\n');
+    expect(stderr.text()).toContain('模型 primary 失败，切换到 backup-a');
+    // fallback 仅当前 turn 生效：session 模型不变
+    expect(session.getModel()).toBe('primary');
+  });
+
   it('无头模式计划批准：plan-approval-requested 自动拒绝并回喂说明', async () => {
     // 与 main.ts 相同的接线：plan 工具经 sessionRef 闭包拿 Session 的计划模式能力
     let sessionRef: Session | null = null;

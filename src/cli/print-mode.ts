@@ -51,6 +51,9 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
           `⚙ ${event.taskId} ${event.status === 'completed' ? '已完成' : event.status === 'failed' ? '失败' : '已停止'}（exit ${event.exitCode ?? '未知'}）\n`,
         );
         break;
+      case 'hook-notice':
+        stderr.write(`${event.isWarning ? '⚠' : '—'} ${event.text}\n`);
+        break;
       case 'approval-requested':
         stderr.write(`✗ 无头模式无法交互审批，已自动拒绝：${event.request.describeCall}\n`);
         deps.session.submit({

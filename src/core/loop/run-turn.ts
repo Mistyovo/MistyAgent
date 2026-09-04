@@ -1,6 +1,7 @@
 import type { ChatProvider, Message, TokenUsage } from '#/provider/types';
 
 import type { EventDispatcher, TurnStopReason } from '../events';
+import { dispatchHookResult, type HookRunner } from '../hooks';
 import type { PermissionRuntime } from '../permission/pipeline';
 import { ToolRegistry } from '../tools/registry';
 import type { Tool } from '../tools/tool';
@@ -31,6 +32,8 @@ export interface RunTurnDeps {
   signal: AbortSignal;
   dispatchEvent: EventDispatcher;
   permission: PermissionRuntime;
+  /** 用户配置的 shell 钩子；缺省不跑 hook */
+  hooks?: HookRunner | undefined;
 }
 
 export interface RunTurnResult {
@@ -127,12 +130,17 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
     deps.onMessageAppended?.(message);
   };
 
-  const finish = (stopReason: TurnStopReason): RunTurnResult => {
+  // stop hooks 只在 turn 正常收尾（非中断）时触发；崩溃/超时降级为警告，不阻断收尾
+  const finish = async (stopReason: TurnStopReason): Promise<RunTurnResult> => {
+    if (stopReason !== 'interrupted' && deps.hooks?.hasHooks('stop') === true) {
+      const hookResult = await deps.hooks.run({ event: 'stop', cwd: deps.cwd });
+      dispatchHookResult(deps.dispatchEvent, 'stop', hookResult);
+    }
     deps.dispatchEvent({ type: 'turn-complete', stopReason, steps, usage });
     return { stopReason, steps, usage };
   };
 
-  const interrupt = (): RunTurnResult => {
+  const interrupt = async (): Promise<RunTurnResult> => {
     synthesizeMissingToolResults(deps.messages, pushMessage);
     deps.dispatchEvent({ type: 'interrupted', reason: 'user' });
     return finish('interrupted');
@@ -207,6 +215,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       dispatchEvent: deps.dispatchEvent,
       permission: deps.permission,
       doomLoop,
+      hooks: deps.hooks,
     });
     for (const { toolCall, result } of results) {
       const message: Message = {

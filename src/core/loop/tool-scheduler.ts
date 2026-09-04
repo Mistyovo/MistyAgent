@@ -2,6 +2,7 @@ import type { ToolCall } from '#/provider/types';
 
 import { errorMessage } from '../errors';
 import type { EventDispatcher } from '../events';
+import { dispatchHookResult, type HookRunner } from '../hooks';
 import type { ApprovalRequest } from '../permission/approval';
 import { evaluatePermission, type PermissionRuntime } from '../permission/pipeline';
 import type { ToolRegistry } from '../tools/registry';
@@ -27,6 +28,8 @@ export interface ExecuteToolCallsDeps {
   permission: PermissionRuntime;
   /** doom-loop 检测器（turn 级）；缺省不做重复调用检测 */
   doomLoop?: DoomLoopDetector | undefined;
+  /** 用户配置的 shell 钩子（preToolUse/postToolUse）；缺省不跑 hook */
+  hooks?: HookRunner | undefined;
 }
 
 const INTERRUPTED_RESULT: ToolResult = { output: 'interrupted by user', isError: true };
@@ -51,8 +54,9 @@ interface RunningCall extends PendingCall {
  *
  * 权限判定统一在调度前的 preflight 阶段逐个 await（串行）：
  * deny 与审批 reject 直接落 isError 结果；ask 会 dispatch
- * approval-requested 事件并挂起等 UI 回复。只有放行的调用进入并发调度，
- * 因此审批挂起不影响并发安全。
+ * approval-requested 事件并挂起等 UI 回复。preToolUse hook 也在 preflight
+ * 串行执行，deny 同样落 isError 结果。只有放行的调用进入并发调度，
+ * 因此审批挂起不影响并发安全。postToolUse hook 在工具落定后随各任务并发执行。
  *
  * 任何失败（参数解析、工具不存在、权限拒绝、call 抛异常）都转为 isError
  * 结果，不会向上抛出。中断时未启动的调用补合成 interrupted 结果。
@@ -146,6 +150,21 @@ export async function executeToolCalls(
     if (askReason !== null && !(await askApproval(index, toolCall, input, askReason))) {
       return null;
     }
+    // preToolUse hooks：权限放行后、执行前的最后拦截点；deny 与权限拒绝同路径落 isError 结果
+    if (deps.hooks?.hasHooks('preToolUse') === true) {
+      const hookResult = await deps.hooks.run({
+        event: 'preToolUse',
+        toolName: toolCall.name,
+        toolInput: input,
+        cwd: deps.cwd,
+        signal: deps.signal,
+      });
+      dispatchHookResult(deps.dispatchEvent, 'preToolUse', hookResult);
+      if (hookResult.denied) {
+        record(index, toolCall, input, errorOf(`hook 拒绝：${hookResult.reason ?? ''}`), 0, false);
+        return null;
+      }
+    }
     return { index, toolCall, input, accesses: tool.accesses(input) };
   };
 
@@ -165,7 +184,21 @@ export async function executeToolCalls(
       } catch (error) {
         result = errorOf(`工具执行异常：${errorMessage(error)}`);
       }
-      record(pending.index, pending.toolCall, pending.input, result, Date.now() - startedAt, false);
+      // durationMs 只计工具本身；postToolUse hooks 在 record 前跑完，保证结果落定前提示已上屏
+      const durationMs = Date.now() - startedAt;
+      if (deps.hooks?.hasHooks('postToolUse') === true) {
+        const hookResult = await deps.hooks.run({
+          event: 'postToolUse',
+          toolName: pending.toolCall.name,
+          toolInput: pending.input,
+          toolOutput: result.output,
+          isError: result.isError === true,
+          cwd: deps.cwd,
+          signal: deps.signal,
+        });
+        dispatchHookResult(deps.dispatchEvent, 'postToolUse', hookResult);
+      }
+      record(pending.index, pending.toolCall, pending.input, result, durationMs, false);
     };
     return { ...pending, promise: run() };
   };

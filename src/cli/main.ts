@@ -82,6 +82,7 @@ function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig
     permission,
     transcript: {},
     maxContextTokens: settings.maxContextTokens,
+    hooks: settings.hooks,
   };
 }
 

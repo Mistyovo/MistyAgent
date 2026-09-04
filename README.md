@@ -50,6 +50,32 @@ CLI 入口 (commander)
 **安全约束：API key 只允许来自环境变量**（`MISTY_API_KEY` 或 `OPENAI_API_KEY`）。
 settings.json 中出现 `provider.apiKey` 会被警告并忽略，禁止把密钥写进任何落盘配置。
 
+### Hooks
+
+settings.json 可配置 shell 命令钩子，在工具执行前后 / turn 结束时触发（对标
+Claude Code 的 PreToolUse/PostToolUse/Stop hooks）：
+
+```jsonc
+{
+  "hooks": {
+    "preToolUse":  [{ "matcher": "write|edit", "command": "node scripts/check.js" }],
+    "postToolUse": [{ "matcher": "bash", "command": "node scripts/log.js" }],
+    "stop":        [{ "command": "node scripts/notify.js" }]
+  }
+}
+```
+
+- `matcher` 是对工具名匹配的正则字符串（仅 preToolUse/postToolUse 有效），省略 = 匹配全部
+- 命令经系统 shell 执行（Windows 为 cmd.exe，与 bash 工具一致），工作目录为会话 cwd
+- 钩子输入经 **stdin** 传 JSON：`{ event, toolName, input, output, isError, cwd }`
+  （字段按事件裁剪，stop 只有 event/cwd）；环境变量附带 `MISTY_HOOK_EVENT` / `MISTY_HOOK_TOOL_NAME`
+- **preToolUse 可阻断工具**：进程 exit code 非 0，或 stdout 输出
+  `{"decision":"deny","reason":"..."}`，reason 会作为 isError 结果回喂模型
+- postToolUse / stop 的 stdout 非空时作为提示上屏（不进消息历史）
+- 单个钩子超时 30s 后终止；钩子崩溃 / 超时只记警告，不阻断主流程
+- hooks 数组在分层合并时拼接累加（user 层与 project 层的钩子都会生效）
+- 钩子命令不进权限审批（用户自己配置的信任代码），也不触发循环防护
+
 ## 使用
 
 ```bash

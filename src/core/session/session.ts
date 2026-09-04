@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
-import type { PermissionMode, PermissionRule } from '#/config/schema';
+import type { HooksSettings, PermissionMode, PermissionRule } from '#/config/schema';
 import type { ChatProvider, Message } from '#/provider/types';
 
 import {
@@ -12,6 +12,7 @@ import {
 } from '../context/compact';
 import { errorMessage } from '../errors';
 import type { AgentEvent, EventListener, TurnStopReason } from '../events';
+import { HookRunner } from '../hooks';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
 import type { ApprovalReplyOp, PlanApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
@@ -60,6 +61,8 @@ export interface SessionConfig {
    * 任务启动/落定被转发为 task-started / task-finished 事件
    */
   tasks?: TaskManager | undefined;
+  /** 用户配置的 shell 钩子（settings.json hooks 字段）；缺省不跑 hook */
+  hooks?: HooksSettings | undefined;
 }
 
 interface QueuedTurn {
@@ -101,6 +104,7 @@ export class Session {
   private readonly maxContextTokens: number;
   private transcript: TranscriptState | null = null;
   private readonly todos: TodoStore | null = null;
+  private readonly hookRunner: HookRunner | null = null;
 
   constructor(config: SessionConfig) {
     this.config = config;
@@ -143,6 +147,9 @@ export class Session {
       });
     }
     this.approvals = new ApprovalManager(config.cwd);
+    if (config.hooks !== undefined) {
+      this.hookRunner = new HookRunner(config.hooks);
+    }
     this.questions.onAsked((request) => {
       this.dispatch({ type: 'question-asked', request });
     });
@@ -443,6 +450,7 @@ export class Session {
         this.dispatch(event);
       },
       permission: this.permission,
+      hooks: this.hookRunner ?? undefined,
     })
       .catch((error: unknown): RunTurnResult => {
         this.dispatch({ type: 'error', message: errorMessage(error), recoverable: false });

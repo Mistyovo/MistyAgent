@@ -289,6 +289,11 @@ export function reduceEvent(
     case 'task-started':
       // 启动本身不上屏（bash 工具块已展示），只刷新状态栏计数
       return { ...state, runningTasks: event.runningCount };
+    case 'hook-notice':
+      return pushBlock(state, {
+        kind: 'notice',
+        text: event.isWarning ? `⚠ ${event.text}` : event.text,
+      });
     case 'task-finished': {
       const command =
         event.command.length > 60 ? `${event.command.slice(0, 60)}…` : event.command;

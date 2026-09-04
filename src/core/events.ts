@@ -1,4 +1,4 @@
-import type { PermissionMode } from '#/config/schema';
+import type { PermissionMode, HookEvent } from '#/config/schema';
 import type { FinishReason, TokenUsage } from '#/provider/types';
 
 import type { ApprovalRequest } from './permission/approval';
@@ -134,6 +134,17 @@ export interface TaskFinishedEvent {
   runningCount: number;
 }
 
+/**
+ * hook 相关提示：stdout 输出（isWarning=false）或 hook 进程失败警告（超时/崩溃等，
+ * isWarning=true）。只上屏，不进消息历史
+ */
+export interface HookNoticeEvent {
+  type: 'hook-notice';
+  hookEvent: HookEvent;
+  text: string;
+  isWarning: boolean;
+}
+
 export type AgentEvent =
   | TurnStartedEvent
   | TurnCompleteEvent
@@ -151,7 +162,8 @@ export type AgentEvent =
   | CompactedEvent
   | TodosUpdatedEvent
   | TaskStartedEvent
-  | TaskFinishedEvent;
+  | TaskFinishedEvent
+  | HookNoticeEvent;
 
 export type EventListener = (event: AgentEvent) => void;
 export type EventDispatcher = (event: AgentEvent) => void;

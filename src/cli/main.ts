@@ -17,6 +17,7 @@ import {
   type ResumedSession,
   type SessionSummary,
 } from '#/core/session/transcript';
+import { loadSubagentDefinitions } from '#/core/subagents';
 import { TodoStore } from '#/core/todos';
 import { TaskManager } from '#/core/tasks';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
@@ -185,6 +186,11 @@ async function action(options: CliOptions): Promise<void> {
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
   const taskManager = new TaskManager();
+  // 自定义子代理定义（~/.misty/agents + <cwd>/.misty/agents）；坏文件降级为 warning
+  const subagents = loadSubagentDefinitions(cwd);
+  for (const warning of subagents.warnings) {
+    console.error(`⚠ ${warning}`);
+  }
   // MCP：连接是异步的而 registry/Session 构造是同步的——启动时 await 全部连接
   // （单 server 10s 超时）再进 print/TUI；失败的 server 降级为 warning，不阻断启动
   let mcpManager: McpManager | null = null;
@@ -213,6 +219,15 @@ async function action(options: CliOptions): Promise<void> {
     taskManager,
     provider,
     getModel: () => sessionRef?.getModel() ?? loaded.settings.provider.defaultModel,
+    subagents: subagents.definitions,
+    // 子代理沿用主会话权限判定（含 /mode 运行时切换）；ask 由子代理侧自动拒绝
+    getPermissionContext: () =>
+      sessionRef?.getPermissionContext() ?? {
+        mode: loaded.settings.permissionMode ?? 'default',
+        rules: loaded.settings.permissionRules ?? [],
+        sessionApprovals: [],
+        cwd,
+      },
     askUser:
       options.print === undefined
         ? (request, signal) =>

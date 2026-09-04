@@ -16,6 +16,7 @@ import {
   createTaskStopTool,
 } from '#/core/tools/builtin/tasks';
 import type { ToolContext } from '#/core/tools/tool';
+import type { ChatProvider } from '#/provider/types';
 
 import { FakeProvider, textStep, toolCallStep } from './fake-provider';
 
@@ -197,7 +198,7 @@ describe('task 工具组', () => {
     const start = Date.now();
     const result = await output.call({ taskId: 'task_1', block: true, timeoutMs: 200 }, ctx);
     expect(Date.now() - start).toBeLessThan(3000);
-    expect(result.output).toContain('[running]');
+    expect(result.output).toContain('[bash:running]');
   }, 15000);
 
   it('task_stop 终止任务并返回最终状态；重复 stop 报告已结束', async () => {
@@ -231,9 +232,56 @@ describe('task 工具组', () => {
     manager.start(LONG_RUNNING, cwd);
     await waitFor(() => manager.get('task_1')?.status === 'completed');
     const result = await list.call({}, ctx);
-    expect(result.output).toContain('task_1  completed (exit 0)  echo list-check');
-    expect(result.output).toMatch(/task_2 {2}running \(pid \d+\)/);
+    expect(result.output).toContain('task_1  bash:completed (exit 0)  echo list-check');
+    expect(result.output).toMatch(/task_2 {2}bash:running \(pid \d+\)/);
   }, 15000);
+});
+
+describe('TaskManager agent 任务', () => {
+  it('startAgent 登记 agent 任务：无 pid，句柄推进输出与落定，完成事件同通道', async () => {
+    const manager = makeManager();
+    const finished: { id: string; status: string; tail: string; runningCount: number }[] = [];
+    manager.onFinished((task, tail, runningCount) => {
+      finished.push({ id: task.id, status: task.status, tail, runningCount });
+    });
+
+    const handle = manager.startAgent('Agent(explore) 找 foo');
+    expect(handle.task).toMatchObject({
+      id: 'task_1',
+      kind: 'agent',
+      status: 'running',
+      pid: undefined,
+    });
+    handle.appendOutput('中间文本');
+    handle.settle(0);
+
+    expect(manager.get('task_1')).toMatchObject({ status: 'completed', exitCode: 0 });
+    expect(manager.output('task_1')?.output).toContain('中间文本');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ id: 'task_1', status: 'completed', runningCount: 0 });
+    expect(finished[0]!.tail).toContain('中间文本');
+  });
+
+  it('stop 触发 abort 信号并按 killed 落定；迟到的重复 settle 幂等', async () => {
+    const manager = makeManager();
+    const handle = manager.startAgent('Agent(plan) 规划');
+    let aborted = false;
+    handle.signal.addEventListener(
+      'abort',
+      () => {
+        aborted = true;
+        // 模拟子代理 loop 响应 abort 后落定
+        handle.settle(1);
+      },
+      { once: true },
+    );
+
+    const stopped = await manager.stop('task_1');
+    expect(aborted).toBe(true);
+    expect(stopped).toMatchObject({ status: 'killed' });
+    handle.settle(0);
+    expect(manager.get('task_1')?.status).toBe('killed');
+  });
 });
 
 describe('后台任务 loop 集成', () => {
@@ -279,5 +327,76 @@ describe('后台任务 loop 集成', () => {
       runningCount: 0,
     });
     expect(finished?.type === 'task-finished' && finished.outputTail).toContain('loop-bg');
+  }, 15000);
+
+  it('agent run_in_background：主 turn 拿到 taskId，Session 派发 task-started / task-finished', async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), 'misty-agentloop-'));
+    const manager = makeManager();
+    const main = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'agent',
+          arguments: JSON.stringify({
+            description: '后台找 foo',
+            prompt: 'foo 定义在哪里？',
+            subagent_type: 'explore',
+            run_in_background: true,
+          }),
+        },
+      ]),
+      textStep('已启动后台子代理'),
+    ]);
+    const sub = new FakeProvider([textStep('子代理结论：foo 在 a.ts:1')]);
+    // 主会话与子代理共享连接场景的路由：按 system prompt 区分脚本，消除消费顺序竞争
+    const router: ChatProvider = {
+      generate: (params) =>
+        params.systemPrompt.includes('代码探索子代理')
+          ? sub.generate(params)
+          : main.generate(params),
+    };
+    const registry = createBuiltinRegistry({
+      taskManager: manager,
+      provider: router,
+      getModel: () => 'fake-model',
+    });
+    const session = new Session({
+      provider: router,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd,
+      permission: { mode: 'bypassPermissions' },
+      tasks: manager,
+    });
+    const events: AgentEvent[] = [];
+    session.onEvent((event) => events.push(event));
+
+    const result = await session.submit({ type: 'user-turn', text: 'go' });
+    expect(result.stopReason).toBe('completed');
+    // 主 turn 拿到了后台 taskId 回执
+    const toolMessage = session
+      .getMessages()
+      .find((m) => m.role === 'tool' && m.name === 'agent');
+    expect(toolMessage?.content).toContain('task_1');
+
+    expect(events.find((e) => e.type === 'task-started')).toMatchObject({
+      type: 'task-started',
+      taskId: 'task_1',
+      command: 'Agent(explore) 后台找 foo',
+      pid: undefined,
+    });
+
+    await manager.waitForSettled('task_1', 5000);
+    const finished = events.find((e) => e.type === 'task-finished');
+    expect(finished).toMatchObject({
+      type: 'task-finished',
+      taskId: 'task_1',
+      status: 'completed',
+      exitCode: 0,
+      runningCount: 0,
+    });
+    expect(finished?.type === 'task-finished' && finished.outputTail).toContain(
+      '子代理结论：foo 在 a.ts:1',
+    );
   }, 15000);
 });

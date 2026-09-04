@@ -187,10 +187,37 @@ misty --resume <id前缀>   # 恢复指定会话
 
 read / write / edit / bash / glob / grep / todo / agent / web_fetch / web_search /
 ask_user / enter_plan_mode / exit_plan_mode。
-`agent` 是子代理工具（`explore` 代码探索、`plan` 实现规划，只读、独立上下文、
-结果回流主会话）；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、15s 超时），
-`web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），两者均为只读；
-连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
+`agent` 是子代理工具（内置 `explore` 代码探索、`plan` 实现规划，只读、独立上下文、
+结果回流主会话；`run_in_background=true` 时后台运行并立即返回 taskId，用
+`task_output` 取结果、`task_stop` 中断，结束时经 task-finished 事件通知，与 bash
+后台任务共用同一任务管理器）；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、
+15s 超时），`web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），
+两者均为只读；连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
 
 上下文：启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
 system prompt（总量 32KB 截断）。
+
+### 自定义子代理
+
+对标 Claude Code 的 `.claude/agents/*.md`：在 `~/.misty/agents/`（用户级）或
+`<cwd>/.misty/agents/`（项目级，同名覆盖用户级）放置 Markdown 文件即可注册新的
+`subagent_type`，启动时加载，坏文件降级为警告不阻断启动。
+
+```markdown
+---
+name: reviewer
+description: 代码评审：审查改动并输出问题清单
+tools: read, glob, grep     # 可选，逗号分隔或 dash 列表；缺省 read/glob/grep
+model: kimi-k2              # 可选，覆盖默认模型
+---
+
+你是代码评审子代理。关注正确性、边界条件与安全问题，输出按严重度排序的问题清单（含文件与行号）。
+```
+
+- `name` / `description` 必填（`name` 只允许字母/数字/连字符/下划线），正文为子代理的
+  system prompt（自动追加 cwd 与运行环境说明）；`description` 是主代理选择子代理的依据
+- `tools` 白名单可选：`read / write / edit / glob / grep / bash / web_fetch / web_search`
+- 与内置 `explore` / `plan` 同名的自定义定义被内置遮蔽
+- 子代理沿用主会话的权限判定（模式/规则/会话级"不再询问"累积），但**没有交互审批能力**：
+  判定为需要审批的操作会被自动拒绝并回喂模型（模型可改用只读方式或在结论里说明）。
+  含写工具的自定义代理建议配合 `--mode acceptEdits` 或 `permissionRules` 使用

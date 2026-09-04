@@ -16,10 +16,11 @@ function tail(text: string, max: number): string {
 }
 
 function statusLine(task: BackgroundTask): string {
-  const base = `${task.id} [${task.status}]`;
+  const base = `${task.id} [${task.kind}:${task.status}]`;
   if (task.status === 'running') {
     const seconds = Math.round((Date.now() - task.startedAt) / 1000);
-    return `${base} pid ${task.pid ?? '未知'}，已运行 ${seconds}s`;
+    const pid = task.pid !== undefined ? ` pid ${task.pid}，` : ' ';
+    return `${base}${pid}已运行 ${seconds}s`;
   }
   return `${base} exit ${task.exitCode ?? '未知'}`;
 }
@@ -33,7 +34,7 @@ export function createTaskOutputTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'task_output',
     description:
-      '查看后台任务（bash run_in_background 启动）的当前输出与状态。' +
+      '查看后台任务（bash run_in_background 或 agent 后台子代理）的当前输出与状态。' +
       `block=true 时挂起等待任务结束或超时（timeoutMs 上限 ${MAX_BLOCK_TIMEOUT_MS / 1000}s，缺省等满上限）。`,
     inputSchema: z.object({
       taskId: z.string().describe('后台任务 id（如 task_1）'),
@@ -79,7 +80,7 @@ export function createTaskOutputTool(tasks: TaskManager): Tool {
 export function createTaskStopTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'task_stop',
-    description: '终止后台任务（杀整个进程树），返回最终状态与输出尾部。',
+    description: '终止后台任务（bash 杀整个进程树；agent 中断子代理 loop），返回最终状态与输出尾部。',
     inputSchema: z.object({
       taskId: z.string().describe('后台任务 id（如 task_1）'),
     }),
@@ -102,7 +103,7 @@ export function createTaskStopTool(tasks: TaskManager): Tool {
 export function createTaskListTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'task_list',
-    description: '列出全部后台任务（含已结束）及其状态。',
+    description: '列出全部后台任务（bash/agent，含已结束）及其状态。',
     inputSchema: z.object({}),
     isReadOnly: () => true,
     accesses: () => [{ kind: 'read' }],
@@ -115,8 +116,10 @@ export function createTaskListTool(tasks: TaskManager): Tool {
       const lines = all.map((task) => {
         const status =
           task.status === 'running'
-            ? `running (pid ${task.pid ?? '未知'})`
-            : `${task.status} (exit ${task.exitCode ?? '未知'})`;
+            ? task.pid !== undefined
+              ? `${task.kind}:running (pid ${task.pid})`
+              : `${task.kind}:running`
+            : `${task.kind}:${task.status} (exit ${task.exitCode ?? '未知'})`;
         const command =
           task.command.length > 80 ? `${task.command.slice(0, 80)}…` : task.command;
         return `${task.id}  ${status}  ${command}`;

@@ -16,7 +16,7 @@ import { HookRunner } from '../hooks';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
 import type { ApprovalReplyOp, PlanApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
-import type { PermissionRuntime } from '../permission/pipeline';
+import type { PermissionContext, PermissionRuntime } from '../permission/pipeline';
 import {
   PlanApprovalManager,
   buildPlanModePrompt,
@@ -233,6 +233,11 @@ export class Session {
 
   getPermissionMode(): PermissionMode {
     return this.permissionMode;
+  }
+
+  /** 当前权限上下文快照（模式/规则/会话级审批累积）；agent 子代理沿用同一判定来源 */
+  getPermissionContext(): PermissionContext {
+    return this.permission.getContext();
   }
 
   /**

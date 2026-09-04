@@ -1,7 +1,9 @@
 import type { ChatProvider } from '#/provider/types';
 
+import type { PermissionContext } from '../../permission/pipeline';
 import type { PlanModeHost } from '../../plan-mode';
 import type { AskUserFn } from '../../question';
+import type { SubagentDefinition } from '../../subagents';
 import { TaskManager } from '../../tasks';
 import { TodoStore } from '../../todos';
 import { ToolRegistry } from '../registry';
@@ -51,6 +53,10 @@ export interface BuiltinHost {
   planMode?: PlanModeHost;
   /** 后台任务管理器；缺省时 registry 自建（任务事件不进 Session 事件流） */
   taskManager?: TaskManager;
+  /** 自定义子代理定义（.misty/agents/*.md 经 loadSubagentDefinitions 加载）；缺省只有内置 explore/plan */
+  subagents?: SubagentDefinition[];
+  /** 主会话权限上下文来源；缺省时子代理按 bypassPermissions 判定（只读工具本就自动放行） */
+  getPermissionContext?: () => PermissionContext;
 }
 
 export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
@@ -68,7 +74,17 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
   registry.register(createEnterPlanModeTool(host?.planMode));
   registry.register(createExitPlanModeTool(host?.planMode));
   if (host?.provider !== undefined && host.getModel !== undefined) {
-    registry.register(createAgentTool({ provider: host.provider, getModel: host.getModel }));
+    registry.register(
+      createAgentTool({
+        provider: host.provider,
+        getModel: host.getModel,
+        tasks: taskManager,
+        ...(host.subagents !== undefined ? { subagents: host.subagents } : {}),
+        ...(host.getPermissionContext !== undefined
+          ? { getPermissionContext: host.getPermissionContext }
+          : {}),
+      }),
+    );
   }
   return registry;
 }

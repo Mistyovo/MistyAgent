@@ -10,6 +10,7 @@ import type {
 } from 'openai/resources/chat/completions/completions';
 import type { Stream } from 'openai/streaming';
 
+import { ContextOverflowError } from '#/provider/errors';
 import type {
   ChatParams,
   ChatProvider,
@@ -62,6 +63,34 @@ function normalizeUsage(usage: ChatCompletionChunk['usage']): TokenUsage | null 
     return null;
   }
   return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
+}
+
+const CONTEXT_OVERFLOW_MESSAGE_PATTERN =
+  /context length|maximum context|context window|too long|too many tokens|request entity too large|reduce the length/i;
+
+/**
+ * 识别「prompt 超出上下文」类端点错误：HTTP 413、error.code 为 context_length_exceeded，
+ * 或 400 且 message 命中常见表述。命中时规整为 ContextOverflowError，供 loop 层压缩重试。
+ */
+export function classifyContextOverflow(error: unknown): ContextOverflowError | null {
+  if (typeof error !== 'object' || error === null) {
+    return null;
+  }
+  const status = (error as { status?: unknown }).status;
+  const code = (error as { code?: unknown }).code;
+  const matched =
+    status === 413 ||
+    code === 'context_length_exceeded' ||
+    (status === 400 &&
+      CONTEXT_OVERFLOW_MESSAGE_PATTERN.test(
+        error instanceof Error ? error.message : String(error),
+      ));
+  if (!matched) {
+    return null;
+  }
+  return new ContextOverflowError(error instanceof Error ? error.message : String(error), {
+    cause: error,
+  });
 }
 
 /**
@@ -234,7 +263,7 @@ export class OpenAIChatProvider implements ChatProvider {
       if (params.signal?.aborted === true) {
         return;
       }
-      yield { type: 'error', error };
+      yield { type: 'error', error: classifyContextOverflow(error) ?? error };
       return;
     }
 
@@ -245,7 +274,7 @@ export class OpenAIChatProvider implements ChatProvider {
       if (params.signal?.aborted === true) {
         return;
       }
-      yield { type: 'error', error };
+      yield { type: 'error', error: classifyContextOverflow(error) ?? error };
     }
   }
 }

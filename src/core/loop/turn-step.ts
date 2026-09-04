@@ -1,3 +1,4 @@
+import { isContextOverflowError } from '#/provider/errors';
 import type {
   ChatProvider,
   FinishReason,
@@ -33,6 +34,8 @@ export interface StepOutcome {
   finishReason: FinishReason | null;
   /** 流以 error part 结束（重试已耗尽）；此时 toolCalls 可能是残缺的 */
   errored: boolean;
+  /** 错误为「prompt 超出上下文」类：runTurn 可触发响应式压缩后重试本步 */
+  contextOverflow: boolean;
 }
 
 interface ToolCallBuffer {
@@ -52,6 +55,7 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
   let usage: TokenUsage | null = null;
   let finishReason: FinishReason | null = null;
   let errored = false;
+  let contextOverflow = false;
 
   const stream = chatWithRetry(
     deps.provider,
@@ -91,10 +95,12 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
         break;
       case 'error':
         errored = true;
+        contextOverflow = isContextOverflowError(part.error);
         deps.dispatchEvent({
           type: 'error',
           message: errorMessage(part.error),
-          recoverable: false,
+          // 溢出错误可能经压缩恢复，由 runTurn 在放弃重试时补发 recoverable=false
+          recoverable: contextOverflow,
         });
         break;
     }
@@ -104,5 +110,5 @@ export async function executeStep(deps: ExecuteStepDeps): Promise<StepOutcome> {
     .toSorted(([left], [right]) => left - right)
     .map(([, buffer]) => ({ ...buffer }));
   deps.dispatchEvent({ type: 'step-finished', step: deps.step, usage, finishReason });
-  return { text, reasoning, toolCalls, usage, finishReason, errored };
+  return { text, reasoning, toolCalls, usage, finishReason, errored, contextOverflow };
 }

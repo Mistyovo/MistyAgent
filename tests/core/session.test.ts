@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AgentEvent } from '#/core/events';
 import { Session } from '#/core/session/session';
 import { defineTool, type Tool, type ToolContext } from '#/core/tools/tool';
+import { ContextOverflowError } from '#/provider/errors';
 import type { AssistantMessage } from '#/provider/types';
 
 import { FakeProvider, textStep, toolCallStep } from './fake-provider';
@@ -113,5 +114,43 @@ describe('Session', () => {
     expect(events.some((e) => e.type === 'interrupted')).toBe(true);
     // 中断后历史完整：assistant 的 toolCall 有对应 tool 消息
     expect(session.getMessages().map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
+  });
+
+  it('context-overflow 后 Session 强制压缩（无视阈值）并重试该步', async () => {
+    const provider = new FakeProvider([
+      [{ type: 'error', error: new ContextOverflowError('prompt too long') }],
+      textStep('这是摘要'),
+      textStep('恢复回答'),
+    ]);
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: [],
+      cwd: process.cwd(),
+      permission: { mode: 'bypassPermissions' },
+      initialMessages: [
+        { role: 'user', content: 'q1' },
+        { role: 'assistant', content: 'a1' },
+        { role: 'user', content: 'q2' },
+        { role: 'assistant', content: 'a2' },
+      ],
+    });
+    const events: AgentEvent[] = [];
+    session.onEvent((event) => events.push(event));
+
+    const result = await session.submit({ type: 'user-turn', text: 'q3' });
+
+    expect(result.stopReason).toBe('completed');
+    // 溢出触发了压缩（阈值远未到达，只有 force 模式才会压）
+    expect(events.find((e) => e.type === 'compacted')).toMatchObject({ beforeCount: 5 });
+    expect(provider.requests).toHaveLength(3);
+    // 第二次请求是摘要生成（原历史 + 摘要 prompt）
+    expect(provider.requests[1]!.messages).toHaveLength(6);
+    // 重试本步用的是压缩后的历史：摘要打头
+    expect(provider.requests[2]!.messages[0]!.content).toContain('[历史对话摘要]');
+    const final = session.getMessages();
+    expect(final[0]!.content).toContain('这是摘要');
+    expect((final.at(-1) as AssistantMessage).content).toBe('恢复回答');
   });
 });

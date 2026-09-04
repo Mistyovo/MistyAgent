@@ -302,6 +302,7 @@ export class Session {
       provider: this.config.provider,
       model: this.model,
       messages: this.messages,
+      cwd: this.config.cwd,
       signal: this.activeController?.signal,
     });
     if (result === null) {
@@ -370,11 +371,30 @@ export class Session {
       model: this.model,
       messages: this.messages,
       maxContextTokens: this.maxContextTokens,
+      cwd: this.config.cwd,
       signal: this.activeController?.signal,
     });
     if (result !== null) {
       this.afterCompaction(result);
     }
+  }
+
+  /** context-overflow 后的响应式压缩：无视阈值强制压缩；false 表示压缩未生效（不再重试） */
+  private async forceCompact(): Promise<boolean> {
+    const result = await maybeCompactHistory({
+      provider: this.config.provider,
+      model: this.model,
+      messages: this.messages,
+      maxContextTokens: this.maxContextTokens,
+      force: true,
+      cwd: this.config.cwd,
+      signal: this.activeController?.signal,
+    });
+    if (result === null) {
+      return false;
+    }
+    this.afterCompaction(result);
+    return true;
   }
 
   private afterCompaction(result: CompactResult): void {
@@ -414,6 +434,7 @@ export class Session {
         this.persist(message);
       },
       maybeCompact: () => this.maybeCompact(),
+      forceCompact: () => this.forceCompact(),
       tools: this.config.tools,
       cwd: this.config.cwd,
       maxSteps: this.config.maxSteps,

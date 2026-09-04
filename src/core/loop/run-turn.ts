@@ -23,6 +23,8 @@ export interface RunTurnDeps {
   onMessageAppended?: (message: Message) => void;
   /** 每步执行前调用（Session 组装的上下文压缩钩子） */
   maybeCompact?: () => Promise<void>;
+  /** context-overflow 错误后的响应式强制压缩（无视阈值）；返回 false 表示压缩未生效 */
+  forceCompact?: () => Promise<boolean>;
   tools: Tool[];
   cwd: string;
   maxSteps?: number | undefined;
@@ -38,6 +40,8 @@ export interface RunTurnResult {
 }
 
 const DEFAULT_MAX_STEPS = 50;
+/** context-overflow 后的「压缩 + 重试本步」次数上限，防连续溢出死循环 */
+const MAX_OVERFLOW_RETRIES = 2;
 
 function addUsage(total: TokenUsage, usage: TokenUsage | null): void {
   if (usage === null) {
@@ -116,6 +120,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
   const doomLoop = new DoomLoopDetector();
   let steps = 0;
   let finalStepForced = false;
+  let overflowRetries = 0;
 
   const pushMessage = (message: Message): void => {
     deps.messages.push(message);
@@ -167,6 +172,23 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
 
     if (outcome.errored) {
       appendAssistantMessage(pushMessage, outcome, true);
+      if (outcome.contextOverflow && !deps.signal.aborted) {
+        if (overflowRetries < MAX_OVERFLOW_RETRIES) {
+          overflowRetries += 1;
+          const compacted = (await deps.forceCompact?.()) ?? false;
+          if (deps.signal.aborted) {
+            return interrupt();
+          }
+          if (compacted) {
+            continue;
+          }
+        }
+        deps.dispatchEvent({
+          type: 'error',
+          message: '上下文超出模型限制，压缩重试后仍失败',
+          recoverable: false,
+        });
+      }
       return finish('error');
     }
     if (deps.signal.aborted) {

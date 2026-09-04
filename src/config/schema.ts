@@ -40,6 +40,14 @@ export const hooksSettingsSchema = z.object({
   stop: z.array(hookEntrySchema).optional(),
 });
 
+/** MCP server 启动配置（v1 仅 stdio transport；SSE/HTTP 留扩展位） */
+export const mcpServerConfigSchema = z.object({
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  /** 在默认继承环境之上追加/覆盖的子进程环境变量 */
+  env: z.record(z.string(), z.string()).optional(),
+});
+
 const providerSettingsSchema = z.object({
   type: z.literal('openai'),
   // 安全约束：apiKey 只允许来自环境变量（MISTY_API_KEY / OPENAI_API_KEY）。
@@ -60,6 +68,8 @@ export const settingsSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   /** shell 命令钩子：工具执行前后 / turn 结束时触发（数组在分层合并时拼接累加） */
   hooks: hooksSettingsSchema.optional(),
+  /** MCP servers：name → stdio 启动配置；其工具以 mcp__<server>__<tool> 名并入工具池 */
+  mcpServers: z.record(z.string(), mcpServerConfigSchema).optional(),
 });
 
 export type PermissionMode = z.infer<typeof permissionModeSchema>;
@@ -67,6 +77,7 @@ export type PermissionRule = z.infer<typeof permissionRuleSchema>;
 export type HookEvent = z.infer<typeof hookEventSchema>;
 export type HookEntry = z.infer<typeof hookEntrySchema>;
 export type HooksSettings = z.infer<typeof hooksSettingsSchema>;
+export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
 
 export const defaultSettings: Settings = {

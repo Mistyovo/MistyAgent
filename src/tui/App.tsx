@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 
 import type { PermissionMode } from '#/config/schema';
+import type { McpManager } from '#/core/mcp/manager';
 import { nextPermissionMode } from '#/core/permission/modes';
 import type { Session } from '#/core/session/session';
 import type { ToolRegistry } from '#/core/tools/registry';
@@ -23,6 +24,8 @@ export interface AppProps {
   registry: ToolRegistry;
   model: string;
   cwd: string;
+  /** 未配置 MCP 时缺省（/mcp 命令提示未配置） */
+  mcpManager?: McpManager | undefined;
 }
 
 const EXIT_ARM_MS = 3000;
@@ -36,7 +39,7 @@ const EXIT_ARM_MS = 3000;
  *
  * 输入路由：/ 开头走斜杠命令框架（不进 session.submit），其余按 user-turn 提交。
  */
-export function App({ session, registry, model: initialModel, cwd }: AppProps) {
+export function App({ session, registry, model: initialModel, cwd, mcpManager }: AppProps) {
   const { exit } = useApp();
   const { state, submit, replyApproval, replyQuestion, replyPlanApproval, notice, clearBlocks } =
     useSessionController(session, registry);
@@ -117,6 +120,7 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
           session.setPermissionMode(next);
           setMode(next);
         },
+        mcpServers: mcpManager === undefined ? undefined : () => mcpManager.serverStatuses(),
         exit,
       };
       void runSlashCommand(text, ctx);

@@ -1,5 +1,6 @@
 import { permissionModeSchema, type PermissionMode } from '#/config/schema';
 import { errorMessage } from '#/core/errors';
+import type { McpServerStatus } from '#/core/mcp/manager';
 import type { Session } from '#/core/session/session';
 
 /** 命令执行上下文：session 引用 + TUI 控制能力（notice/clearBlocks/状态栏更新/退出） */
@@ -14,6 +15,8 @@ export interface CommandContext {
   setModel(model: string): void;
   /** 切换权限模式并更新状态栏 */
   setMode(mode: PermissionMode): void;
+  /** MCP server 状态查询；未配置 MCP 时缺省 */
+  mcpServers?: (() => McpServerStatus[]) | undefined;
   exit(): void;
 }
 
@@ -109,7 +112,28 @@ const exit: SlashCommand = {
   },
 };
 
-export const slashCommands: SlashCommand[] = [help, clear, model, mode, compact, exit];
+const mcp: SlashCommand = {
+  name: 'mcp',
+  description: '列出 MCP server 连接状态与工具数',
+  usage: '/mcp',
+  execute: (_args, ctx) => {
+    const statuses = ctx.mcpServers?.() ?? [];
+    if (statuses.length === 0) {
+      ctx.notice('未配置 MCP server（在 settings.json 的 mcpServers 字段中配置）');
+      return;
+    }
+    const lines = statuses.map((status) => {
+      if (status.state === 'connected') {
+        return `  ✓ ${status.name} — 已连接，${status.toolCount} 个工具`;
+      }
+      const label = status.state === 'failed' ? '连接失败' : '已断开';
+      return `  ✗ ${status.name} — ${label}${status.error === undefined ? '' : `：${status.error}`}`;
+    });
+    ctx.notice(['MCP servers：', ...lines].join('\n'));
+  },
+};
+
+export const slashCommands: SlashCommand[] = [help, clear, model, mode, compact, mcp, exit];
 
 export function isSlashCommand(text: string): boolean {
   return text.trim().startsWith('/');

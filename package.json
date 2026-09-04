@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^14.0.0",
     "get-east-asian-width": "^1.6.0",
     "ink": "^6.0.0",

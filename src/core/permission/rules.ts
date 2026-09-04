@@ -26,12 +26,23 @@ export function extractPath(input: unknown): string | null {
   return null;
 }
 
-function compileGlob(pattern: string): ((value: string) => boolean) | null {
+function compileGlob(pattern: string, nocase = false): ((value: string) => boolean) | null {
   try {
-    return picomatch(pattern, { dot: true });
+    return picomatch(pattern, { dot: true, nocase });
   } catch {
     return null;
   }
+}
+
+/** glob 元字符出现在规则 tool 字段时按 glob 匹配工具名（如 mcp__filesystem__*） */
+const TOOL_GLOB_CHARS = /[*?[\]!(){}]/;
+
+function matchToolName(ruleTool: string, toolName: string): boolean {
+  if (!TOOL_GLOB_CHARS.test(ruleTool)) {
+    return ruleTool.toLowerCase() === toolName.toLowerCase();
+  }
+  const isMatch = compileGlob(ruleTool, true);
+  return isMatch !== null && isMatch(toolName);
 }
 
 function matchBashPattern(pattern: string, command: string): boolean {
@@ -62,7 +73,8 @@ function matchPathPattern(pattern: string, inputPath: string, cwd: string): bool
 
 /**
  * 规则匹配（对齐 Claude Code）：
- * - tool 名大小写不敏感：配置里习惯写 Claude Code 风格的 "Bash"，内置工具是小写
+ * - tool 名大小写不敏感：配置里习惯写 Claude Code 风格的 "Bash"，内置工具是小写；
+ *   tool 字段含 glob 元字符时按 glob 匹配工具名（如 mcp__filesystem__* 放行整组 MCP 工具）
  * - 无 pattern：匹配该工具的全部调用
  * - bash：pattern 是命令前缀 glob，'git *' 覆盖 'git …' 与裸 'git'；
  *   精确 pattern（如 'git status'）只匹配该命令本身
@@ -74,7 +86,7 @@ export function matchRule(
   input: unknown,
   cwd: string,
 ): boolean {
-  if (rule.tool.toLowerCase() !== toolName.toLowerCase()) {
+  if (!matchToolName(rule.tool, toolName)) {
     return false;
   }
   if (rule.pattern === undefined) {

@@ -76,6 +76,31 @@ Claude Code 的 PreToolUse/PostToolUse/Stop hooks）：
 - hooks 数组在分层合并时拼接累加（user 层与 project 层的钩子都会生效）
 - 钩子命令不进权限审批（用户自己配置的信任代码），也不触发循环防护
 
+### MCP（Model Context Protocol）
+
+settings.json 可配置 MCP servers（对标 Claude Code 的 MCP 集成），其工具并入
+Agent 工具池，名字加 `mcp__<server>__<tool>` 前缀避免与内置工具冲突：
+
+```jsonc
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "env": { "FOO": "bar" }   // 可选：追加到子进程环境（默认继承 PATH 等安全变量）
+    }
+  }
+}
+```
+
+- v1 仅支持 stdio transport（command + args + env）；SSE/HTTP transport 留扩展位
+- 启动时并行连接所有 server（单个 10s 超时），连接失败的 server 降级为 warning
+  不阻断启动；TUI 内 `/mcp` 查看各 server 连接状态与工具数
+- MCP 工具按保守策略参与权限：`default` 模式弹审批；可用 permissionRules 放行，
+  `tool` 字段支持精确工具名或 glob（如 `mcp__filesystem__*` 放行整组工具）
+- MCP 工具的 inputSchema 是 JSON Schema，原样透传给模型；参数校验在 server 端完成
+- 进程退出时自动断开全部连接并终止子进程
+
 ## 使用
 
 ```bash
@@ -144,6 +169,7 @@ TUI 内输入 `/` 开头的命令：
 | `/mode [name]` | 切换权限模式；无参数显示当前模式 |
 | `/compact` | 手动压缩上下文（超过阈值时也会自动触发） |
 | `/clear` | 开始新会话（清屏 + 新 transcript） |
+| `/mcp` | 列出 MCP server 连接状态与工具数 |
 | `/exit` | 退出 |
 
 ### 会话恢复

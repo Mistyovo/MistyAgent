@@ -121,6 +121,16 @@ describe('matchRule', () => {
     expect(matchRule({ action: 'deny', tool: 'Read', pattern: '**' }, 'read', {}, cwd)).toBe(false);
     expect(matchRule({ action: 'deny', tool: 'Bash', pattern: '*' }, 'bash', {}, cwd)).toBe(false);
   });
+
+  it('tool 字段含 glob 元字符时按 glob 匹配工具名（MCP 工具组）', () => {
+    const rule: PermissionRule = { action: 'allow', tool: 'mcp__filesystem__*' };
+    expect(matchRule(rule, 'mcp__filesystem__read_file', {}, cwd)).toBe(true);
+    expect(matchRule(rule, 'mcp__filesystem__write_file', {}, cwd)).toBe(true);
+    expect(matchRule(rule, 'mcp__other__read_file', {}, cwd)).toBe(false);
+    expect(matchRule(rule, 'read', {}, cwd)).toBe(false);
+    // glob 匹配保持大小写不敏感，与精确匹配一致
+    expect(matchRule({ action: 'allow', tool: 'MCP__FILESYSTEM__*' }, 'mcp__filesystem__x', {}, cwd)).toBe(true);
+  });
 });
 
 describe('findMatchingRule', () => {

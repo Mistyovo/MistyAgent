@@ -8,6 +8,7 @@ import {
   type SettingsOverrides,
 } from '#/config/settings';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
+import { McpManager } from '#/core/mcp/manager';
 import type { PlanModeHost } from '#/core/plan-mode';
 import { Session, type SessionConfig } from '#/core/session/session';
 import {
@@ -184,6 +185,16 @@ async function action(options: CliOptions): Promise<void> {
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
   const taskManager = new TaskManager();
+  // MCP：连接是异步的而 registry/Session 构造是同步的——启动时 await 全部连接
+  // （单 server 10s 超时）再进 print/TUI；失败的 server 降级为 warning，不阻断启动
+  let mcpManager: McpManager | null = null;
+  const mcpServers = loaded.settings.mcpServers;
+  if (mcpServers !== undefined && Object.keys(mcpServers).length > 0) {
+    mcpManager = new McpManager(mcpServers, cwd);
+    for (const warning of await mcpManager.connect()) {
+      console.error(`⚠ ${warning}`);
+    }
+  }
   // agent / ask_user / plan 工具经 sessionRef 闭包取运行期状态（/model 切换、提问挂起、
   // 计划模式状态与计划审批）；这些工具只可能在 turn 进行中运行，此时 sessionRef 必已赋值。
   // print 无头模式不注入提问能力：ask_user 退化为"自行决策"的工具结果；
@@ -209,6 +220,11 @@ async function action(options: CliOptions): Promise<void> {
         : undefined,
     planMode: planModeHost,
   });
+  if (mcpManager !== null) {
+    for (const tool of mcpManager.tools()) {
+      registry.register(tool);
+    }
+  }
   const sessionConfig = buildSessionConfig(loaded.settings, cwd);
   if (resumed !== null) {
     sessionConfig.transcript = { sessionId: resumed.sessionId };
@@ -226,12 +242,14 @@ async function action(options: CliOptions): Promise<void> {
 
   if (options.print !== undefined) {
     const code = await runPrintMode({ session, registry, prompt: options.print, tasks: taskManager });
+    await mcpManager?.close();
     await flushStreams();
     exitProcess(code);
     return;
   }
 
   if (process.stdout.isTTY !== true || process.stdin.isTTY !== true) {
+    await mcpManager?.close();
     fail('TUI 需要交互式终端（TTY）；自动化 / CI 场景请使用 -p, --print <prompt>。');
   }
 
@@ -242,8 +260,10 @@ async function action(options: CliOptions): Promise<void> {
     registry,
     model: loaded.settings.provider.defaultModel,
     cwd,
+    mcpManager: mcpManager ?? undefined,
   });
   await instance.waitUntilExit();
+  await mcpManager?.close();
   await flushStreams();
   exitProcess(0);
 }

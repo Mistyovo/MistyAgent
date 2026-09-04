@@ -6,6 +6,7 @@ import { sessionRuleFor, type ApprovalReply, type ApprovalRequest } from '#/core
 import { describeRule, extractCommand, extractPath } from '#/core/permission/rules';
 
 import { useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface ApprovalDialogProps {
   request: ApprovalRequest;
@@ -117,6 +118,7 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   });
 
   const detail = approvalDetailLines(request);
+  const theme = getTheme();
   // 内容宽度预算：左边框 1 格 + paddingX 左 1 格 + 1 格余量，reserve 3。
   // 命令/路径/文件内容都是上游不可控文本，sanitize+物理折行后才能进动态区。
   const wrap = useTerminalTextWrap();
@@ -133,18 +135,18 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
       flexDirection="column"
       alignSelf="flex-start"
       borderStyle="classic"
-      borderColor="yellow"
+      borderColor={theme.warning}
       borderRight={false}
       paddingX={1}
       marginTop={1}
     >
-      <Text bold color="yellow">
+      <Text bold color={theme.warning}>
         {wrap(`需要审批：${request.describeCall}`, 3)}
       </Text>
       <Text dimColor>{wrap(request.reason, 3)}</Text>
       {detail.length > 0 && <Text dimColor>{wrap(detail.join('\n'), 3)}</Text>}
       {options.map((option, index) => (
-        <Text key={option.decision} {...(index === selection ? { color: 'cyan' as const } : {})}>
+        <Text key={option.decision} {...(index === selection ? { color: theme.accent } : {})}>
           {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
         </Text>
       ))}

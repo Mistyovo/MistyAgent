@@ -5,6 +5,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import type { PlanApprovalReply, PlanApprovalRequest } from '#/core/plan-mode';
 
 import { useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface PlanApprovalDialogProps {
   request: PlanApprovalRequest;
@@ -79,22 +80,23 @@ export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps
 
   // 计划文本来自模型（上游不可控），一律 sanitize+物理折行后上屏
   const plan = truncatePlanLines(request.plan, planLineBudget(rows));
+  const theme = getTheme();
   return (
     <Box
       flexDirection="column"
       alignSelf="flex-start"
       borderStyle="classic"
-      borderColor="blue"
+      borderColor={theme.permissionMode.plan}
       borderRight={false}
       paddingX={1}
       marginTop={1}
     >
-      <Text bold color="blue">
+      <Text bold color={theme.permissionMode.plan}>
         {wrap('计划待批准', 3)}
       </Text>
       <Text>{wrap(plan, 3)}</Text>
       {options.map((option, index) => (
-        <Text key={option.label} {...(index === selection ? { color: 'cyan' as const } : {})}>
+        <Text key={option.label} {...(index === selection ? { color: theme.accent } : {})}>
           {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
         </Text>
       ))}

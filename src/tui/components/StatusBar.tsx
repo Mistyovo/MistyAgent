@@ -14,6 +14,7 @@ import {
   truncateTerminalText,
   useTerminalColumns,
 } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface StatusBarProps {
   cwd: string;
@@ -32,7 +33,7 @@ export function formatTokenCount(count: number): string {
   return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
-/** 底栏：cwd basename · 模型 · 权限模式（M3 元数据的符号+颜色）· token 用量。
+/** 底栏：cwd basename · 模型 · 权限模式（符号/文案取自 M3 元数据，颜色取自主题）· token 用量。
  *  不画边框线：box-drawing 字符（─│ 等 East Asian Ambiguous）在中文 cmd.exe
  *  老式 conhost 里按 2 格渲染，满宽边框行会物理换行、与 ink 的行高预算错位，
  *  eraseLines 逐帧少擦导致残帧/空白累积。整行物理宽度按 列数-2 预算
@@ -47,6 +48,7 @@ export const StatusBar = memo(function StatusBar({
   exitArmed,
 }: StatusBarProps) {
   const meta = permissionModeMeta[mode];
+  const theme = getTheme();
   const basename = path.basename(cwd) || cwd;
   const widthMode = getTerminalWidthMode();
   const budget = useTerminalColumns() - 2;
@@ -64,13 +66,13 @@ export const StatusBar = memo(function StatusBar({
     <Box marginTop={1} paddingX={1}>
       {basenameShown !== '' && <Text dimColor>{basenameShown}</Text>}
       <Text dimColor>{`  ${model}  `}</Text>
-      <Text color={meta.color}>{`${meta.symbol} ${meta.label}`}</Text>
+      <Text color={theme.permissionMode[mode]}>{`${meta.symbol} ${meta.label}`}</Text>
       {busy && <Text dimColor>{'  …'}</Text>}
       {runningTasks > 0 && <Text dimColor>{`  ⚙ ${runningTasks}`}</Text>}
       {usage !== null && (
         <Text dimColor>{`  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`}</Text>
       )}
-      {exitArmed && <Text color="red">{'  再按一次 Ctrl+C 退出'}</Text>}
+      {exitArmed && <Text color={theme.error}>{'  再按一次 Ctrl+C 退出'}</Text>}
     </Box>
   );
 });

@@ -5,6 +5,7 @@ import { Box, Text, useInput } from 'ink';
 import type { QuestionReply, QuestionRequest } from '#/core/question';
 
 import { useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface QuestionDialogProps {
   request: QuestionRequest;
@@ -86,18 +87,19 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
   const hint = multi
     ? '空格/1-4 勾选，↑/↓ 移动，Enter 确认，Esc 跳过'
     : '1-4 直选，↑/↓ 移动，Enter 确认，Esc 跳过';
+  const theme = getTheme();
   // 问题与选项文案来自模型（上游不可控），一律 sanitize+物理折行后上屏
   return (
     <Box
       flexDirection="column"
       alignSelf="flex-start"
       borderStyle="classic"
-      borderColor="cyan"
+      borderColor={theme.accent}
       borderRight={false}
       paddingX={1}
       marginTop={1}
     >
-      <Text bold color="cyan">
+      <Text bold color={theme.accent}>
         {wrap(`提问：${request.question}`, 3)}
       </Text>
       {options.map((option, index) => {
@@ -107,7 +109,7 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
             ? ` — ${option.description}`
             : '';
         return (
-          <Text key={`${index}:${option.label}`} {...(index === selection ? { color: 'cyan' as const } : {})}>
+          <Text key={`${index}:${option.label}`} {...(index === selection ? { color: theme.accent } : {})}>
             {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${mark}${option.label}${description}`, 3)}
           </Text>
         );

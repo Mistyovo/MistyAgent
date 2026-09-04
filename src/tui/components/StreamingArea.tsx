@@ -5,6 +5,7 @@ import { Box, Text } from 'ink';
 import type { StreamingState } from '../controllers/session-reducer';
 import { completeLinesOnly } from '../controllers/stream-utils';
 import { getTerminalWidthMode, useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const ASCII_FRAMES = ['-', '\\', '|', '/'];
@@ -17,6 +18,7 @@ function spinnerFrames(): string[] {
 function Spinner({ label }: { label: string }) {
   const [index, setIndex] = useState(0);
   const frames = spinnerFrames();
+  const theme = getTheme();
   useEffect(() => {
     const timer = setInterval(() => {
       setIndex((current) => (current + 1) % frames.length);
@@ -25,7 +27,7 @@ function Spinner({ label }: { label: string }) {
       clearInterval(timer);
     };
   }, [frames.length]);
-  return <Text color="cyan">{`${frames[index % frames.length] ?? ''} ${label}`}</Text>;
+  return <Text color={theme.spinner}>{`${frames[index % frames.length] ?? ''} ${label}`}</Text>;
 }
 
 /**

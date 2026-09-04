@@ -9,6 +9,7 @@ import {
   wrapTerminalLine,
   wrapTerminalLineWithCursor,
 } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface PromptInputProps {
   busy: boolean;
@@ -232,6 +233,7 @@ export const PromptInput = memo(function PromptInput({
   // value 入框时已 sanitize，折行不再改字符，光标 offset 保持对齐
   const budget = useTerminalColumns() - 3;
   const widthMode = getTerminalWidthMode();
+  const theme = getTheme();
   return (
     <Box flexDirection="column" marginTop={1}>
       {lines.flatMap((line, index) => {
@@ -241,7 +243,7 @@ export const PromptInput = memo(function PromptInput({
             : { segments: wrapTerminalLine(line, budget, widthMode), cursorSegment: -1, cursorCol: 0 };
         return wrapped.segments.map((segment, segmentIndex) => (
           <Text key={`${index}:${segmentIndex}`}>
-            <Text color="green">{index === 0 && segmentIndex === 0 ? '> ' : '  '}</Text>
+            <Text color={theme.promptMarker}>{index === 0 && segmentIndex === 0 ? '> ' : '  '}</Text>
             {segmentIndex === wrapped.cursorSegment ? (
               <LineWithCursor line={segment} col={wrapped.cursorCol} />
             ) : (

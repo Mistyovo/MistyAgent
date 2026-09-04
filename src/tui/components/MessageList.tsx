@@ -6,30 +6,32 @@ import { TOOL_OUTPUT_PREVIEW_LINES } from '#/core/output-spill';
 
 import type { ToolBlock, UiBlock } from '../controllers/session-reducer';
 import { useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 const OUTPUT_PREVIEW_LINES = TOOL_OUTPUT_PREVIEW_LINES;
 
 function ToolBlockView({ block }: { block: ToolBlock }) {
   const wrap = useTerminalTextWrap();
+  const theme = getTheme();
   const head =
     block.status === 'running'
-      ? { color: 'yellow' as const, suffix: ' …' }
+      ? { color: theme.warning, suffix: ' …' }
       : block.isError
-        ? { color: 'red' as const, suffix: '（失败）' }
-        : { color: undefined, suffix: block.durationMs === null ? '' : `（${block.durationMs}ms）` };
+        ? { color: theme.error, suffix: '（失败）' }
+        : { color: theme.toolHead, suffix: block.durationMs === null ? '' : `（${block.durationMs}ms）` };
   const output = block.output ?? '';
   const lines = output.split('\n');
   const preview = lines.slice(0, OUTPUT_PREVIEW_LINES);
   const hidden = lines.length - preview.length;
   return (
     <Box flexDirection="column">
-      <Text {...(head.color === undefined ? {} : { color: head.color })}>
+      <Text color={head.color}>
         {wrap(`⏵ ${block.description}${head.suffix}`)}
       </Text>
       {block.status === 'done' && output !== '' && (
         <Box flexDirection="column" marginLeft={2}>
           {preview.map((line, index) => (
-            <Text key={index} {...(block.isError ? { color: 'red' as const } : { dimColor: true })}>
+            <Text key={index} {...(block.isError ? { color: theme.error } : { dimColor: true })}>
               {wrap(line, 2)}
             </Text>
           ))}
@@ -51,14 +53,15 @@ function ToolBlockView({ block }: { block: ToolBlock }) {
 
 function BlockView({ block }: { block: UiBlock }) {
   const wrap = useTerminalTextWrap();
+  const theme = getTheme();
   switch (block.kind) {
     case 'user': {
       const lines = wrap(block.text, 2).split('\n');
       return (
         <Box flexDirection="column">
           {lines.map((line, index) => (
-            <Text key={index} color="green">
-              {index === 0 ? '> ' : '  '}
+            <Text key={index} color={theme.userText}>
+              {index === 0 ? <Text color={theme.userMarker}>{'> '}</Text> : '  '}
               {line}
             </Text>
           ))}
@@ -83,7 +86,7 @@ function BlockView({ block }: { block: UiBlock }) {
     case 'tool':
       return <ToolBlockView block={block} />;
     case 'error':
-      return <Text color="red">{wrap(`✗ ${block.message}`)}</Text>;
+      return <Text color={theme.error}>{wrap(`✗ ${block.message}`)}</Text>;
     case 'notice':
       return <Text dimColor>{wrap(`— ${block.text}`)}</Text>;
   }

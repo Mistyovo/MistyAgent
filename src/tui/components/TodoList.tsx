@@ -5,6 +5,7 @@ import { Box, Text } from 'ink';
 import type { TodoItem } from '#/core/todos';
 
 import { useTerminalTextWrap } from '../terminal-text';
+import { getTheme } from '../theme';
 
 export interface TodoListProps {
   todos: TodoItem[];
@@ -15,6 +16,7 @@ export interface TodoListProps {
  *  文本，整行必须过物理宽度折行（reserve 1 = paddingX 左格）。 */
 export const TodoList = memo(function TodoList({ todos }: TodoListProps) {
   const wrap = useTerminalTextWrap();
+  const theme = getTheme();
   if (todos.length === 0) {
     return null;
   }
@@ -27,7 +29,7 @@ export const TodoList = memo(function TodoList({ todos }: TodoListProps) {
             : todo.content;
         if (todo.status === 'in_progress') {
           return (
-            <Text key={`${index}-${todo.content}`} color="cyan" bold>
+            <Text key={`${index}-${todo.content}`} color={theme.accent} bold>
               {wrap(`▶ ${label}`, 1)}
             </Text>
           );

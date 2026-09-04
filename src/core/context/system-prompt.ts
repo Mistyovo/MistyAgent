@@ -13,6 +13,7 @@ export function buildStaticPrompt(): string {
     '',
     '工具使用准则：',
     '- 优先使用专用工具（read / glob / grep）而不是 bash 里的等价命令。',
+    '- 需要联网时用 web_search 搜索、web_fetch 抓取页面；两者均为只读，抓取结果可能受网络环境限制。',
     '- 修改文件前先用 read 了解现状；write 用于整文件创建或覆写，edit 用于局部精确修改。',
     '- 互不依赖的只读调用可以在一次回复里并行发起。',
     '- 执行有副作用的命令前，先用一句话向用户说明要做什么。',

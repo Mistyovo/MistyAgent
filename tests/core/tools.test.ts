@@ -167,6 +167,8 @@ describe('registry', () => {
       'grep',
       'read',
       'todo',
+      'web_fetch',
+      'web_search',
       'write',
     ]);
     for (const definition of registry.definitions()) {

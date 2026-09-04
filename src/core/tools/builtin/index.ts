@@ -11,6 +11,8 @@ import { globTool } from './glob';
 import { grepTool } from './grep';
 import { readTool } from './read';
 import { createTodoTool } from './todo';
+import { webFetchTool } from './web-fetch';
+import { webSearchTool } from './web-search';
 import { writeTool } from './write';
 
 /** 无状态内置工具；todo / agent 依赖宿主状态，由 createBuiltinRegistry 按宿主能力装配 */
@@ -21,6 +23,8 @@ export const builtinTools: Tool[] = [
   bashTool,
   globTool,
   grepTool,
+  webFetchTool,
+  webSearchTool,
 ];
 
 /**

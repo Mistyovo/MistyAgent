@@ -127,9 +127,11 @@ misty --resume <id前缀>   # 恢复指定会话
 
 ### 内置工具
 
-read / write / edit / bash / glob / grep / todo / agent。
+read / write / edit / bash / glob / grep / todo / agent / web_fetch / web_search。
 `agent` 是子代理工具（`explore` 代码探索、`plan` 实现规划，只读、独立上下文、
-结果回流主会话）；连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
+结果回流主会话）；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、15s 超时），
+`web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），两者均为只读；
+连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
 
 上下文：启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
 system prompt（总量 32KB 截断）。

@@ -13,29 +13,52 @@ const REINJECT_MAX_FILES = 5;
 const REINJECT_MAX_TOTAL_CHARS = 20_000;
 /** 每条消息的固定开销（role、分隔等 wire 结构） */
 const PER_MESSAGE_OVERHEAD_TOKENS = 4;
-/** 粗估：4 字符 ≈ 1 token */
-const CHARS_PER_TOKEN = 4;
+/** 粗估：ASCII 4 字符 ≈ 1 token，CJK 等宽字符 1 字符 ≈ 1 token */
+const ASCII_CHARS_PER_TOKEN = 4;
+/** 摘要请求历史窗口的预算占比；余量留给 system prompt、摘要输出与估算误差 */
+const SUMMARY_WINDOW_BUDGET_RATIO = 0.5;
+/** 省略概况中列出的最近 read 文件数上限 */
+const DIGEST_MAX_READ_PATHS = 10;
+
+/** 分段粗估：宽字符（CJK 等）1 字符 ≈ 1 token，ASCII 4 字符 ≈ 1 token */
+function estimateTextTokens(text: string): number {
+  let wide = 0;
+  let ascii = 0;
+  for (const char of text) {
+    if (char.codePointAt(0)! < 0x80) {
+      ascii += 1;
+    } else {
+      wide += 1;
+    }
+  }
+  return wide + Math.ceil(ascii / ASCII_CHARS_PER_TOKEN);
+}
 
 export function estimateTokens(messages: readonly Message[]): number {
   let total = 0;
   for (const message of messages) {
-    let chars = message.content.length;
+    let tokens = PER_MESSAGE_OVERHEAD_TOKENS + estimateTextTokens(message.content);
     if (message.role === 'assistant') {
-      chars += message.reasoning?.length ?? 0;
+      // reasoning 不回传 API（端点会拒绝该字段），不计入
       for (const call of message.toolCalls ?? []) {
-        chars += call.name.length + call.arguments.length;
+        tokens += estimateTextTokens(call.name) + estimateTextTokens(call.arguments);
       }
     }
-    total += PER_MESSAGE_OVERHEAD_TOKENS + Math.ceil(chars / CHARS_PER_TOKEN);
+    total += tokens;
   }
   return total;
 }
 
-const SUMMARY_PROMPT = [
-  '以上是当前会话的完整对话历史。请用中文输出一份简洁摘要，覆盖：',
+const SUMMARY_PROMPT_BODY = [
+  '请用中文输出一份简洁摘要，覆盖：',
   '1）对话目标；2）已完成的工作；3）涉及的关键文件；4）待办事项。',
   '该摘要将替代原始历史作为后续对话的上下文，请保留关键事实。',
 ].join('\n');
+
+const SUMMARY_PROMPT = `以上是当前会话的完整对话历史。${SUMMARY_PROMPT_BODY}`;
+
+/** 历史被截窗时改用：说明窗口外还有被省略的早期部分 */
+const SUMMARY_PROMPT_WINDOWED = `以上是会话历史的较新部分（更早部分已省略，概况见上一条消息）。${SUMMARY_PROMPT_BODY}`;
 
 const SUMMARIZER_SYSTEM_PROMPT = '你是对话摘要助手，输出简洁、准确的中文摘要。';
 
@@ -54,6 +77,8 @@ export interface CompactOptions {
   keepRecent?: number;
   /** 提供后压缩时回注最近 read 过的文件当前内容（路径相对 cwd 解析） */
   cwd?: string | undefined;
+  /** 摘要请求的输入预算基准；缺省取 DEFAULT_MAX_CONTEXT_TOKENS */
+  maxContextTokens?: number | undefined;
   signal?: AbortSignal | undefined;
 }
 
@@ -145,12 +170,73 @@ async function buildReinjectionMessages(
   return messages.toReversed();
 }
 
-/** 用 provider 生成历史摘要；流出错/中断/空摘要返回 null */
+/**
+ * 截取进入摘要请求的历史尾部：从最新向前累计估算 token，超预算即止，
+ * 保证历史已硬溢出时摘要请求自身不溢出。窗口若以 tool 消息开头则一并丢弃
+ * （其 assistant 调用已出窗，留着会触发 wire 配对 400）。
+ */
+function buildSummaryWindow(
+  messages: readonly Message[],
+  budgetTokens: number,
+): { kept: Message[]; dropped: Message[] } {
+  let start = messages.length;
+  let used = 0;
+  while (start > 0) {
+    const cost = estimateTokens([messages[start - 1]!]);
+    if (used + cost > budgetTokens) {
+      break;
+    }
+    used += cost;
+    start -= 1;
+  }
+  while (start < messages.length && messages[start]!.role === 'tool') {
+    start += 1;
+  }
+  return { kept: messages.slice(start), dropped: messages.slice(0, start) };
+}
+
+/** 被省略的早期历史概况：供摘要模型了解出窗部分涉及的工具与文件 */
+function buildDroppedDigest(dropped: readonly Message[]): Message {
+  const toolCounts = new Map<string, number>();
+  for (const message of dropped) {
+    if (message.role !== 'assistant') {
+      continue;
+    }
+    for (const call of message.toolCalls ?? []) {
+      toolCounts.set(call.name, (toolCounts.get(call.name) ?? 0) + 1);
+    }
+  }
+  const readPaths = extractRecentReadFiles(dropped, DIGEST_MAX_READ_PATHS);
+  const lines = [`[更早的 ${dropped.length} 条历史消息因超出摘要预算被省略，仅附概况]`];
+  if (toolCounts.size > 0) {
+    lines.push(
+      `工具调用：${[...toolCounts].map(([name, count]) => `${name}×${count}`).join('、')}`,
+    );
+  }
+  if (readPaths.length > 0) {
+    lines.push(`最近读取文件：${readPaths.join('、')}`);
+  }
+  return { role: 'user', content: lines.join('\n') };
+}
+
+/**
+ * 用 provider 生成历史摘要；流出错/中断/空摘要返回 null。
+ * 历史可能已硬超上下文（响应式压缩），故只送按预算截取的尾部窗口，
+ * 被省略部分附工具/文件概况，保证摘要请求自身不溢出。
+ */
 async function summarize(options: CompactOptions): Promise<string | null> {
+  const maxContextTokens = options.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
+  const budget = Math.floor(maxContextTokens * SUMMARY_WINDOW_BUDGET_RATIO);
+  const { kept, dropped } = buildSummaryWindow(options.messages, budget);
+  const requestMessages: Message[] = [
+    ...(dropped.length > 0 ? [buildDroppedDigest(dropped)] : []),
+    ...kept,
+    { role: 'user', content: dropped.length > 0 ? SUMMARY_PROMPT_WINDOWED : SUMMARY_PROMPT },
+  ];
   const stream = options.provider.generate({
     model: options.model,
     systemPrompt: SUMMARIZER_SYSTEM_PROMPT,
-    messages: [...options.messages, { role: 'user', content: SUMMARY_PROMPT }],
+    messages: requestMessages,
     tools: [],
     signal: options.signal,
   });

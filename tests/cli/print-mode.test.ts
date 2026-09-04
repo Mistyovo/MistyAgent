@@ -1,9 +1,9 @@
-import { Writable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { runPrintMode } from '#/cli/print-mode';
+import { PRINT_STDIN_MAX_BYTES, resolvePrintPrompt, runPrintMode } from '#/cli/print-mode';
 import { Session } from '#/core/session/session';
 import { TaskManager } from '#/core/tasks';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
@@ -22,6 +22,14 @@ function fakeStream(): { stream: Writable; text: () => string } {
     },
   });
   return { stream, text: () => data };
+}
+
+function fakeStdin(chunks: string[], isTTY = false): Readable & { isTTY?: boolean } {
+  const stream = Readable.from(chunks) as Readable & { isTTY?: boolean };
+  if (isTTY) {
+    stream.isTTY = true;
+  }
+  return stream;
 }
 
 async function run(scripts: StreamedMessagePart[][]) {
@@ -296,4 +304,31 @@ describe('runPrintMode 后台任务 drain', () => {
     expect(stderr.text()).not.toContain('后台任务在运行');
     expect(stderr.text()).toMatch(/⚙ task_1 已完成（exit 0）/);
   }, 15000);
+});
+
+describe('resolvePrintPrompt（print 模式管道 stdin）', () => {
+  it('stdin 非 TTY（管道）：多 chunk 全部内容以分隔线拼到 prompt 尾部', async () => {
+    const result = await resolvePrintPrompt('review', fakeStdin(['diff --git a/x', '\n+line']));
+    expect(result).toBe('review\n\n--- stdin ---\ndiff --git a/x\n+line');
+  });
+
+  it('stdin 是 TTY（纯 argv 用法）：不读 stdin，prompt 原样返回', async () => {
+    const stream = fakeStdin(['不该被读取'], true);
+    const result = await resolvePrintPrompt('review', stream);
+    expect(result).toBe('review');
+    expect(stream.readableEnded).toBe(false);
+  });
+
+  it('stdin 为空（重定向空文件）：prompt 原样返回', async () => {
+    const result = await resolvePrintPrompt('review', fakeStdin(['']));
+    expect(result).toBe('review');
+  });
+
+  it('stdin 超过 1MB：按字节上限截断并在末尾注明', async () => {
+    const over = 'a'.repeat(PRINT_STDIN_MAX_BYTES + 100);
+    const result = await resolvePrintPrompt('review', fakeStdin([over]));
+    expect(result).toBe(
+      `review\n\n--- stdin ---\n${'a'.repeat(PRINT_STDIN_MAX_BYTES)}\n[…stdin 内容超过 1MB，已截断]`,
+    );
+  });
 });

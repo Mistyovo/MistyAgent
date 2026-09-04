@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+
 import { eastAsianWidth } from 'get-east-asian-width';
 import { useStdout } from 'ink';
 
@@ -117,11 +119,15 @@ export function wrapTerminalText(
 /**
  * 组件侧入口：sanitize + 折行，预算 = 列数 - 1 - reserve。
  * reserve 是该行内容之外已占用的物理格数（前缀、缩进、边框+padding 等）。
+ * useCallback 固定返回函数：memo 组件的 props/依赖引用稳定才不白 memo
  */
 export function useTerminalTextWrap(): (text: string, reserve?: number) => string {
   const columns = useTerminalColumns();
   const mode = getTerminalWidthMode();
-  return (text, reserve = 0) => wrapTerminalText(text, columns - 1 - reserve, mode);
+  return useCallback(
+    (text: string, reserve = 0) => wrapTerminalText(text, columns - 1 - reserve, mode),
+    [columns, mode],
+  );
 }
 
 export interface WrappedCursorLine {

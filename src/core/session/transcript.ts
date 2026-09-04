@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   statSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -36,6 +40,23 @@ export interface SessionMeta {
   version: string;
 }
 
+/** 压缩检查点 meta 行内容：标记此前历史已被压缩，resume 从检查点之后的摘要恢复 */
+export interface CompactCheckpointMeta {
+  kind: 'compact-checkpoint';
+  beforeCount: number;
+  afterCount: number;
+  beforeTokens: number;
+  afterTokens: number;
+}
+
+export function isCompactCheckpoint(entry: TranscriptEntry): boolean {
+  if (entry.type !== 'meta') {
+    return false;
+  }
+  const message = entry.message as { kind?: unknown } | null;
+  return typeof message === 'object' && message !== null && message.kind === 'compact-checkpoint';
+}
+
 /** 盘符冒号与路径分隔符统一替换为 -，作为项目目录名 */
 export function sanitizeCwd(cwd: string): string {
   return cwd.replace(/[:/\\]/g, '-');
@@ -45,8 +66,11 @@ export function transcriptDirFor(cwd: string, homeDir: string = homedir()): stri
   return join(homeDir, '.misty', 'projects', sanitizeCwd(cwd));
 }
 
-function readLastUuid(filePath: string): string | null {
-  const lines = readFileSync(filePath, 'utf8').split('\n');
+/** readLastUuid 的尾部首窗：末行通常不足 1KB，找不到时窗口翻倍直至覆盖全文件 */
+const TAIL_WINDOW_INITIAL_BYTES = 64 * 1024;
+
+function lastUuidIn(text: string): string | null {
+  const lines = text.split('\n');
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index]?.trim() ?? '';
     if (line === '') {
@@ -58,10 +82,31 @@ function readLastUuid(filePath: string): string | null {
         return parsed.uuid;
       }
     } catch {
-      // 损坏行继续向上找
+      // 损坏行（含窗口截断的半行）继续向上找
     }
   }
   return null;
+}
+
+/** 从文件尾部倒读最后一个 uuid，避免整文件加载 */
+function readLastUuid(filePath: string): string | null {
+  const fd = openSync(filePath, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    let window = TAIL_WINDOW_INITIAL_BYTES;
+    for (;;) {
+      const length = Math.min(size, window);
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      const uuid = lastUuidIn(buffer.toString('utf8'));
+      if (uuid !== null || length === size) {
+        return uuid;
+      }
+      window *= 2;
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -134,13 +179,37 @@ export interface SessionSummary {
 }
 
 const SUMMARY_MAX_CHARS = 80;
+/** 摘要只读文件头部：首条 user 行前只有很短的 meta 行；窗口截断的半行 JSON.parse 必失败被跳过 */
+const SUMMARY_HEAD_BYTES = 8 * 1024;
+
+function readHead(filePath: string, maxBytes: number): string {
+  const fd = openSync(filePath, 'r');
+  try {
+    const length = Math.min(fstatSync(fd).size, maxBytes);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, 0);
+    return buffer.toString('utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
 
 function firstUserSummary(filePath: string): string {
-  for (const entry of loadTranscript(filePath)) {
+  for (const line of readHead(filePath, SUMMARY_HEAD_BYTES).split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      continue;
+    }
+    let entry: { type?: unknown; message?: unknown };
+    try {
+      entry = JSON.parse(trimmed) as { type?: unknown; message?: unknown };
+    } catch {
+      continue;
+    }
     if (entry.type !== 'user') {
       continue;
     }
-    const content = (entry.message as { content?: unknown }).content;
+    const content = (entry.message as { content?: unknown } | undefined)?.content;
     if (typeof content === 'string') {
       const oneLine = content.replace(/\s+/g, ' ').trim();
       return oneLine.length > SUMMARY_MAX_CHARS
@@ -180,7 +249,7 @@ export function listSessions(cwd: string, homeDir: string = homedir()): SessionS
 export interface ResumedSession {
   sessionId: string;
   filePath: string;
-  /** 从 transcript 重建的消息历史（meta 行跳过） */
+  /** 从 transcript 重建的消息历史（meta 行跳过；最后一个压缩检查点之前的历史丢弃） */
   messages: Message[];
 }
 
@@ -192,8 +261,17 @@ export function resumeSession(filePath: string): ResumedSession {
   if (!existsSync(filePath)) {
     throw new Error(`会话文件不存在：${filePath}`);
   }
+  const entries = loadTranscript(filePath);
+  // 最后一个压缩检查点之后才是有效历史，之前的原始历史已被压缩掉
+  let start = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (isCompactCheckpoint(entries[index]!)) {
+      start = index + 1;
+      break;
+    }
+  }
   const messages: Message[] = [];
-  for (const entry of loadTranscript(filePath)) {
+  for (const entry of entries.slice(start)) {
     if (entry.type === 'meta' || !isHistoryMessage(entry.message)) {
       continue;
     }

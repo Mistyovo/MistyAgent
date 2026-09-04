@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 import { Box, Static, Text } from 'ink';
 
 import type { ToolBlock, UiBlock } from '../controllers/session-reducer';
@@ -76,15 +78,16 @@ function BlockView({ block }: { block: UiBlock }) {
   }
 }
 
-/** 已完成的消息区：进 ink Static，渲染一次后不再重绘 */
-export function MessageList({ blocks }: { blocks: UiBlock[] }) {
+/** 已完成的消息区：进 ink Static，渲染一次后不再重绘。
+ *  assistant 续块（流式增量冲刷的后续段）不留块间距，拼回一整段的视觉效果 */
+export const MessageList = memo(function MessageList({ blocks }: { blocks: UiBlock[] }) {
   return (
     <Static items={blocks}>
       {(block) => (
-        <Box key={block.id} marginTop={1}>
+        <Box key={block.id} marginTop={block.kind === 'assistant' && block.continuation ? 0 : 1}>
           <BlockView block={block} />
         </Box>
       )}
     </Static>
   );
-}
+});

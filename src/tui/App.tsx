@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Box, useApp, useInput } from 'ink';
 
@@ -112,29 +112,34 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
     }
   });
 
-  const handleSubmit = (text: string): void => {
-    if (isSlashCommand(text)) {
-      const ctx: CommandContext = {
-        session,
-        busy,
-        notice,
-        clearBlocks,
-        setModel: (next) => {
-          session.setModel(next);
-          setModel(next);
-        },
-        setMode: (next) => {
-          session.setPermissionMode(next);
-          setMode(next);
-        },
-        mcpServers: mcpManager === undefined ? undefined : () => mcpManager.serverStatuses(),
-        exit,
-      };
-      void runSlashCommand(text, ctx);
-      return;
-    }
-    submit(text);
-  };
+  // useCallback 固定引用：流式期间 App 每次重渲都新建 onSubmit 会让 memo 后的 PromptInput 失效；
+  // ctx 只在斜杠命令真正执行时构造，不进每帧渲染路径
+  const handleSubmit = useCallback(
+    (text: string): void => {
+      if (isSlashCommand(text)) {
+        const ctx: CommandContext = {
+          session,
+          busy,
+          notice,
+          clearBlocks,
+          setModel: (next) => {
+            session.setModel(next);
+            setModel(next);
+          },
+          setMode: (next) => {
+            session.setPermissionMode(next);
+            setMode(next);
+          },
+          mcpServers: mcpManager === undefined ? undefined : () => mcpManager.serverStatuses(),
+          exit,
+        };
+        void runSlashCommand(text, ctx);
+        return;
+      }
+      submit(text);
+    },
+    [session, busy, notice, clearBlocks, mcpManager, exit, submit],
+  );
 
   return (
     <Box flexDirection="column">

@@ -128,3 +128,100 @@ describe('resumeSession', () => {
     expect(() => resumeSession(join(root, 'missing.jsonl'))).toThrow('会话文件不存在');
   });
 });
+
+describe('resumeSession 压缩检查点', () => {
+  const checkpoint = { kind: 'compact-checkpoint', beforeCount: 2, afterCount: 1, beforeTokens: 100, afterTokens: 10 };
+
+  it('遇到 compact-checkpoint 丢弃此前历史，从摘要消息恢复', () => {
+    const filePath = join(root, 'c1.jsonl');
+    const writer = new TranscriptWriter(filePath);
+    writer.append('meta', { sessionId: 'c1' });
+    writer.appendMessage({ role: 'user', content: '旧问题' });
+    writer.appendMessage({ role: 'assistant', content: '旧回答' });
+    writer.append('meta', checkpoint);
+    writer.appendMessage({ role: 'user', content: '[历史对话摘要]\n摘要' });
+    writer.appendMessage({ role: 'user', content: '新问题' });
+    writer.appendMessage({ role: 'assistant', content: '新回答' });
+
+    const resumed = resumeSession(filePath);
+
+    expect(resumed.messages.map((message) => message.content)).toEqual([
+      '[历史对话摘要]\n摘要',
+      '新问题',
+      '新回答',
+    ]);
+  });
+
+  it('多个 checkpoint 时以最后一个为准', () => {
+    const filePath = join(root, 'c2.jsonl');
+    const writer = new TranscriptWriter(filePath);
+    writer.appendMessage({ role: 'user', content: 'q1' });
+    writer.append('meta', checkpoint);
+    writer.appendMessage({ role: 'user', content: '[历史对话摘要]\n摘要一' });
+    writer.appendMessage({ role: 'assistant', content: 'a1' });
+    writer.append('meta', checkpoint);
+    writer.appendMessage({ role: 'user', content: '[历史对话摘要]\n摘要二' });
+    writer.appendMessage({ role: 'assistant', content: 'a2' });
+
+    const resumed = resumeSession(filePath);
+
+    expect(resumed.messages.map((message) => message.content)).toEqual([
+      '[历史对话摘要]\n摘要二',
+      'a2',
+    ]);
+  });
+
+  it('普通 SessionMeta 行不触发历史丢弃', () => {
+    const filePath = join(root, 'c3.jsonl');
+    const writer = new TranscriptWriter(filePath);
+    writer.append('meta', { sessionId: 'c3', cwd: '/p', model: 'm', permissionMode: 'default', version: '0' });
+    writer.appendMessage({ role: 'user', content: 'q' });
+    writer.append('meta', { sessionId: 'c3', cwd: '/p', model: 'm', permissionMode: 'default', version: '0' });
+    writer.appendMessage({ role: 'assistant', content: 'a' });
+
+    const resumed = resumeSession(filePath);
+
+    expect(resumed.messages.map((message) => message.content)).toEqual(['q', 'a']);
+  });
+});
+
+describe('listSessions 头部读取', () => {
+  it('大文件：首条 user 行在头部窗口内即可取到摘要，不整文件解析', () => {
+    const dir = transcriptDirFor('C:\\big', root);
+    mkdirSync(dir, { recursive: true });
+    const writer = new TranscriptWriter(join(dir, 'big.jsonl'));
+    writer.appendMessage({ role: 'user', content: '首条问题' });
+    writer.appendMessage({ role: 'assistant', content: 'x'.repeat(256 * 1024) });
+
+    const sessions = listSessions('C:\\big', root);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.summary).toBe('首条问题');
+  });
+
+  it('首条 user 行超出头部窗口时摘要为空（不回退整文件读取）', () => {
+    const dir = transcriptDirFor('C:\\huge', root);
+    mkdirSync(dir, { recursive: true });
+    const writer = new TranscriptWriter(join(dir, 'huge.jsonl'));
+    writer.appendMessage({ role: 'user', content: 'y'.repeat(16 * 1024) });
+
+    const sessions = listSessions('C:\\huge', root);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.summary).toBe('');
+  });
+});
+
+describe('TranscriptWriter 尾部读取', () => {
+  it('末行超过尾部首窗时窗口翻倍，仍能续上 uuid 链', () => {
+    const filePath = join(root, 'tail.jsonl');
+    const first = new TranscriptWriter(filePath);
+    first.appendMessage({ role: 'user', content: 'q' });
+    const big = first.appendMessage({ role: 'assistant', content: 'x'.repeat(200 * 1024) });
+
+    const second = new TranscriptWriter(filePath);
+    const next = second.appendMessage({ role: 'user', content: '续' });
+
+    expect(next.parentUuid).toBe(big.uuid);
+  });
+});

@@ -1,9 +1,10 @@
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { errorMessage } from '../errors';
 import type { Tool, ToolResult } from '../tools/tool';
 
-import type { McpClient, McpToolInfo } from './client';
+import { MCP_CALL_TIMEOUT_MS, type McpClient, type McpToolInfo } from './client';
 
 /**
  * MCP 给的 inputSchema 是 JSON Schema，本地不做实参校验（真正的校验在 server 端）；
@@ -65,6 +66,8 @@ function resultToText(result: McpCallResultLike): string {
  * - 名字加 mcp__<server>__<tool> 前缀（Claude Code 约定，避免与内置工具冲突）
  * - isReadOnly=false / accesses=execute（保守：default 模式弹审批，可用
  *   permissionRules 按工具名或 mcp__<server>__* glob 放行）
+ * - ctx.signal 透传给 SDK（Esc 中断在途调用），调用带默认超时；
+ *   中断/超时落 isError 结果，绝不让 promise 挂死
  */
 export function adaptMcpTool(serverName: string, client: McpClient, info: McpToolInfo): Tool {
   const name = `mcp__${serverName}__${info.name}`;
@@ -77,17 +80,29 @@ export function adaptMcpTool(serverName: string, client: McpClient, info: McpToo
     isReadOnly: () => false,
     accesses: () => [{ kind: 'execute' }],
     describeCall: () => `MCP ${serverName}:${info.name}`,
-    call: async (input): Promise<ToolResult> => {
+    call: async (input, ctx): Promise<ToolResult> => {
       if (typeof input !== 'object' || input === null || Array.isArray(input)) {
         return { output: 'MCP 工具参数必须是 JSON 对象', isError: true };
       }
       try {
-        const result = await client.callTool(info.name, input as Record<string, unknown>);
+        const result = await client.callTool(info.name, input as Record<string, unknown>, {
+          signal: ctx.signal,
+        });
         return {
           output: resultToText(result),
           ...(result.isError === true ? { isError: true } : {}),
         };
       } catch (error) {
+        // SDK 把 abort 也包成 RequestTimeout 编码的 McpError，中断判定须在超时之前
+        if (ctx.signal.aborted) {
+          return { output: `MCP 工具调用被中断：${serverName}:${info.name}`, isError: true };
+        }
+        if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
+          return {
+            output: `MCP 工具调用超时（${MCP_CALL_TIMEOUT_MS / 1000}s 无响应）：${serverName}:${info.name}`,
+            isError: true,
+          };
+        }
         return { output: `MCP 工具调用失败：${errorMessage(error)}`, isError: true };
       }
     },

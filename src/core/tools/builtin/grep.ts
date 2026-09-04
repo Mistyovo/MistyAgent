@@ -12,7 +12,7 @@ import {
   isBinaryFile,
   resolvePath,
   statKind,
-  walkFiles,
+  walkFilesStream,
 } from './fs-utils';
 
 const MAX_MATCHES = 100;
@@ -59,7 +59,8 @@ export const grepTool = defineTool({
 
     const matches: string[] = [];
     let truncated = false;
-    for (const file of await walkFiles(root)) {
+    // 流式消费：命中上限即 break，遍历随之终止，不付全树遍历的代价
+    for await (const file of walkFilesStream(root)) {
       if (matches.length >= MAX_MATCHES) {
         truncated = true;
         break;

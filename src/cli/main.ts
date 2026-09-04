@@ -24,7 +24,7 @@ import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
 
 import { buildOverrides, collect, type CliOptions } from './options';
-import { runPrintMode } from './print-mode';
+import { resolvePrintPrompt, runPrintMode } from './print-mode';
 import { exitProcess } from './exit-process';
 
 function fail(message: string): never {
@@ -234,7 +234,9 @@ async function action(options: CliOptions): Promise<void> {
   sessionRef = session;
 
   if (options.print !== undefined) {
-    const code = await runPrintMode({ session, registry, prompt: options.print, tasks: taskManager });
+    // stdin 被管道/重定向时拼接到 prompt（git diff | misty -p "review"）；TTY 时原样
+    const prompt = await resolvePrintPrompt(options.print);
+    const code = await runPrintMode({ session, registry, prompt, tasks: taskManager });
     await mcpManager?.close();
     await flushStreams();
     exitProcess(code);

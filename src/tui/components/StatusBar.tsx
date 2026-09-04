@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+import { memo } from 'react';
+
 import { Box, Text } from 'ink';
 
 import type { PermissionMode } from '#/config/schema';
@@ -35,7 +37,15 @@ export function formatTokenCount(count: number): string {
  *  老式 conhost 里按 2 格渲染，满宽边框行会物理换行、与 ink 的行高预算错位，
  *  eraseLines 逐帧少擦导致残帧/空白累积。整行物理宽度按 列数-2 预算
  *  （-1 满宽保险、-1 paddingX 左格），余量不够时从 basename 截断。 */
-export function StatusBar({ cwd, model, mode, usage, busy, runningTasks, exitArmed }: StatusBarProps) {
+export const StatusBar = memo(function StatusBar({
+  cwd,
+  model,
+  mode,
+  usage,
+  busy,
+  runningTasks,
+  exitArmed,
+}: StatusBarProps) {
   const meta = permissionModeMeta[mode];
   const basename = path.basename(cwd) || cwd;
   const widthMode = getTerminalWidthMode();
@@ -63,4 +73,4 @@ export function StatusBar({ cwd, model, mode, usage, busy, runningTasks, exitArm
       {exitArmed && <Text color="red">{'  再按一次 Ctrl+C 退出'}</Text>}
     </Box>
   );
-}
+});

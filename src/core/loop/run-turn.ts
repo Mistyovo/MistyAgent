@@ -238,13 +238,12 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       }
       return finish('error');
     }
-    // length 截断（max_tokens 打满）：仅当本步未流出任何可见内容时翻倍 maxTokens
-    // 重发整个请求——此时重试无重复内容的副作用；已流出部分输出则保留现状
-    // （重发会重复已上屏内容），turn 照常推进
+    // length 截断（max_tokens 打满）：无 text 且无 toolCalls 时翻倍 maxTokens 重发
+    // 整个请求——reasoning 不排除（reasoning 模型可能把输出预算全烧在思考上，
+    // 此时重发只是重复上屏 reasoning，可接受）；已流出 text 则保留现状，turn 照常推进
     if (
       outcome.finishReason === 'length' &&
       outcome.text === '' &&
-      outcome.reasoning === '' &&
       outcome.toolCalls.length === 0 &&
       !deps.signal.aborted
     ) {

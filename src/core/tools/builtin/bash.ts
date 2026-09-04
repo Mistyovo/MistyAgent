@@ -1,19 +1,17 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 import { z } from 'zod';
 
-import type { TaskManager } from '#/core/tasks';
+import { killTree, type TaskManager } from '#/core/tasks';
 
 import { defineTool, type Tool } from '../tool';
 
 import { truncate } from './fs-utils';
 
-const execAsync = promisify(exec);
-
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 30_000;
-// 给截断留余量，避免 maxBuffer 先于我们自己的截断触发
+// 流式累积的内存安全阀：超出即丢弃，截断逻辑（MAX_OUTPUT_CHARS）远先于此生效
 const MAX_BUFFER_BYTES = 8 * 1024 * 1024;
 
 const inputSchema = z.object({
@@ -32,12 +30,14 @@ const inputSchema = z.object({
     ),
 });
 
-interface ExecFailure {
-  code?: number | string;
-  signal?: string;
-  killed?: boolean;
-  stdout?: string;
-  stderr?: string;
+type ForegroundStatus = 'ok' | 'failed' | 'timeout' | 'aborted';
+
+interface ForegroundResult {
+  status: ForegroundStatus;
+  /** 正常落定后的退出码；被信号杀死为 null */
+  code: number | null;
+  stdout: string;
+  stderr: string;
 }
 
 function formatOutput(stdout: string, stderr: string): string {
@@ -56,7 +56,86 @@ function formatOutput(stdout: string, stderr: string): string {
 }
 
 /**
- * 前台走 exec 拿 stdout/stderr；run_in_background=true 走 TaskManager 立即返回。
+ * 前台 spawn(shell:true) 执行并收集 stdout/stderr。
+ * 超时与 abort 走共享 killTree 杀整棵进程树——exec 的 timeout/signal 只杀壳层
+ * （Windows cmd.exe），npm run build 之类命令的孙进程会成孤儿继续跑。
+ * POSIX 以 detached 启动使壳进程成为进程组组长，killTree 才能按负 pid 整组杀。
+ */
+function execForeground(
+  command: string,
+  cwd: string,
+  timeout: number,
+  signal: AbortSignal,
+): Promise<ForegroundResult> {
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(command, {
+        cwd,
+        shell: true,
+        windowsHide: true,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      resolve({ status: 'failed', code: null, stdout: '', stderr: String(error) });
+      return;
+    }
+
+    let status: ForegroundStatus = 'ok';
+    let settled = false;
+    let stdout = '';
+    let stderr = '';
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
+
+    const kill = (reason: 'timeout' | 'aborted'): void => {
+      status = reason;
+      void killTree(child);
+    };
+    const onAbort = (): void => kill('aborted');
+    const timer = setTimeout(() => kill('timeout'), timeout);
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener('abort', onAbort);
+    }
+
+    const settle = (code: number | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
+      resolve({ status: status === 'ok' && code !== 0 ? 'failed' : status, code, stdout, stderr });
+    };
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < MAX_BUFFER_BYTES) {
+        stdout += stdoutDecoder.write(chunk);
+      }
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < MAX_BUFFER_BYTES) {
+        stderr += stderrDecoder.write(chunk);
+      }
+    });
+    // spawn 失败（如 cwd 不存在）：error 后不一定有 close，两条路径都要能落定
+    child.on('error', (error) => {
+      stderr += error.message;
+      settle(null);
+    });
+    child.on('close', (code) => {
+      settle(code);
+    });
+  });
+}
+
+/**
+ * 前台走 spawn 拿 stdout/stderr；run_in_background=true 走 TaskManager 立即返回。
  * 后台启动与前台一样经调度 preflight 审批（accesses 恒为 execute），工具内部不再弹。
  * 后台任务刻意不绑 ctx.signal：interrupt 只中断前台 turn，不影响后台进程。
  */
@@ -84,29 +163,20 @@ export function createBashTool(tasks: TaskManager): Tool {
         };
       }
       const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS;
-      try {
-        const { stdout, stderr } = await execAsync(input.command, {
-          cwd: ctx.cwd,
-          timeout,
-          maxBuffer: MAX_BUFFER_BYTES,
-          signal: ctx.signal,
-          windowsHide: true,
-        });
-        const output = formatOutput(stdout, stderr);
+      const result = await execForeground(input.command, ctx.cwd, timeout, ctx.signal);
+      const output = formatOutput(result.stdout, result.stderr);
+      if (result.status === 'ok') {
         return { output: output.length > 0 ? output : '(无输出)' };
-      } catch (error) {
-        const failure = error as ExecFailure;
-        const output = formatOutput(failure.stdout ?? '', failure.stderr ?? '');
-        if (ctx.signal.aborted) {
-          return { output: `命令被中断\n${output}`.trim(), isError: true };
-        }
-        if (failure.killed === true && failure.signal === 'SIGTERM') {
-          return { output: `命令超时（${timeout}ms）已终止\n${output}`.trim(), isError: true };
-        }
-        const code =
-          typeof failure.code === 'number' ? `exit code ${failure.code}` : String(failure.code);
-        return { output: `命令失败（${code}）\n${output}`.trim(), isError: true };
       }
+      if (result.status === 'aborted') {
+        return { output: `命令被中断\n${output}`.trim(), isError: true };
+      }
+      if (result.status === 'timeout') {
+        return { output: `命令超时（${timeout}ms）已终止\n${output}`.trim(), isError: true };
+      }
+      const code =
+        typeof result.code === 'number' ? `exit code ${result.code}` : String(result.code);
+      return { output: `命令失败（${code}）\n${output}`.trim(), isError: true };
     },
   });
 }

@@ -18,6 +18,16 @@ export interface McpToolInfo {
 
 const STDERR_TAIL_LIMIT = 500;
 
+/** 单次工具调用的默认超时：server 卡死时由 SDK 按 RequestTimeout 落定，不挂死 turn */
+export const MCP_CALL_TIMEOUT_MS = 60_000;
+
+export interface McpCallOptions {
+  /** 透传工具 ctx.signal：turn 中断（Esc）时在途调用立即取消 */
+  signal?: AbortSignal | undefined;
+  /** 缺省用 MCP_CALL_TIMEOUT_MS */
+  timeoutMs?: number | undefined;
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -96,8 +106,15 @@ export class McpClient {
     return this.closed;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
-    const result = await this.client.callTool({ name, arguments: args });
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    options?: McpCallOptions,
+  ): Promise<CallToolResult> {
+    const result = await this.client.callTool({ name, arguments: args }, undefined, {
+      ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+      timeout: options?.timeoutMs ?? MCP_CALL_TIMEOUT_MS,
+    });
     return result as CallToolResult;
   }
 

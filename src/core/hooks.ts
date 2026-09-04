@@ -1,11 +1,9 @@
-import { exec, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn, type ChildProcess } from 'node:child_process';
 
 import type { HookEntry, HookEvent, HooksSettings } from '#/config/schema';
 
 import type { EventDispatcher } from './events';
-
-const execAsync = promisify(exec);
+import { killTree } from './tasks';
 
 export const HOOK_TIMEOUT_MS = 30_000;
 /** 单侧 stdout/stderr 缓冲上限（hook 不应刷屏；超出截断保留头部） */
@@ -47,6 +45,31 @@ interface ProcResult {
 }
 
 /**
+ * 加载时预编译的 hook 条目：matcher 正则只编译一次。
+ * matcher 三态：undefined 未配置（匹配全部）；null 非法正则（不匹配，配置层已校验、这里兜底）；
+ * RegExp 正常过滤。
+ */
+interface CompiledHookEntry {
+  entry: HookEntry;
+  matcher: RegExp | null | undefined;
+}
+
+function compileMatcher(pattern: string | undefined): RegExp | null | undefined {
+  if (pattern === undefined) {
+    return undefined;
+  }
+  try {
+    return new RegExp(pattern);
+  } catch {
+    return null;
+  }
+}
+
+function compileEntries(entries: HookEntry[] | undefined): CompiledHookEntry[] {
+  return (entries ?? []).map((entry) => ({ entry, matcher: compileMatcher(entry.matcher) }));
+}
+
+/**
  * shell 命令钩子执行器（对标 Claude Code PreToolUse/PostToolUse/Stop hooks）。
  * 命令经 spawn(shell:true) 执行（Windows 即 cmd.exe，与 bash 工具同语义）；
  * 输入经 stdin 传 JSON（{ event, toolName, input, output, isError, cwd }），
@@ -59,27 +82,33 @@ interface ProcResult {
  */
 export class HookRunner {
   private readonly timeoutMs: number;
+  private readonly entries: Record<HookEvent, CompiledHookEntry[]>;
 
   constructor(
-    private readonly hooks: HooksSettings,
+    hooks: HooksSettings,
     options: { timeoutMs?: number } = {},
   ) {
     this.timeoutMs = options.timeoutMs ?? HOOK_TIMEOUT_MS;
+    this.entries = {
+      preToolUse: compileEntries(hooks.preToolUse),
+      postToolUse: compileEntries(hooks.postToolUse),
+      stop: compileEntries(hooks.stop),
+    };
   }
 
   hasHooks(event: HookEvent): boolean {
-    return (this.hooks[event]?.length ?? 0) > 0;
+    return this.entries[event].length > 0;
   }
 
   async run(input: HookRunInput): Promise<HookRunResult> {
-    const entries = this.hooks[input.event] ?? [];
+    const entries = this.entries[input.event];
     const result: HookRunResult = { denied: false, stdout: '', warnings: [] };
     const stdoutParts: string[] = [];
-    for (const entry of entries) {
+    for (const { entry, matcher } of entries) {
       if (result.denied) {
         break; // preToolUse 首个 deny 短路：后续检查不再执行
       }
-      if (!this.matches(entry, input)) {
+      if (!this.matches(matcher, input)) {
         continue;
       }
       const proc = await this.exec(entry.command, input);
@@ -127,16 +156,11 @@ export class HookRunner {
     return result;
   }
 
-  private matches(entry: HookEntry, input: HookRunInput): boolean {
-    if (input.event === 'stop' || entry.matcher === undefined) {
+  private matches(matcher: RegExp | null | undefined, input: HookRunInput): boolean {
+    if (input.event === 'stop' || matcher === undefined) {
       return true;
     }
-    // 配置层已校验正则合法性；这里防御性兜底，非法正则视为不匹配
-    try {
-      return new RegExp(entry.matcher).test(input.toolName ?? '');
-    } catch {
-      return false;
-    }
+    return matcher !== null && matcher.test(input.toolName ?? '');
   }
 
   private exec(command: string, input: HookRunInput): Promise<ProcResult> {
@@ -153,31 +177,47 @@ export class HookRunner {
         }
         settled = true;
         clearTimeout(timer);
+        input.signal?.removeEventListener('abort', onAbort);
         resolve({ ...result, stdout, stderr });
       };
 
-      let child;
+      let child: ChildProcess | undefined;
+      // 中断/超时统一走共享 killTree 杀整棵进程树；child 未 spawn 成功时退化为无操作
+      const onAbort = (): void => {
+        if (child !== undefined) {
+          void killTree(child);
+        }
+      };
       try {
         child = spawn(command, {
           cwd: input.cwd,
           shell: true,
           windowsHide: true,
+          // POSIX 下使壳进程成为进程组组长，killTree 才能按负 pid 整组杀
+          detached: process.platform !== 'win32',
           stdio: ['pipe', 'pipe', 'pipe'],
           env: {
             ...process.env,
             MISTY_HOOK_EVENT: input.event,
             ...(input.toolName !== undefined ? { MISTY_HOOK_TOOL_NAME: input.toolName } : {}),
           },
-          ...(input.signal !== undefined ? { signal: input.signal } : {}),
         });
       } catch (error) {
         settle({ spawnError: error instanceof Error ? error.message : String(error) });
         return;
       }
 
+      if (input.signal !== undefined) {
+        if (input.signal.aborted) {
+          onAbort();
+        } else {
+          input.signal.addEventListener('abort', onAbort);
+        }
+      }
+
       timer = setTimeout(() => {
         timedOut = true;
-        void killTree(child.pid);
+        onAbort();
       }, this.timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => {
@@ -191,7 +231,7 @@ export class HookRunner {
         }
       });
       child.on('error', (error) => {
-        if (input.signal?.aborted === true || error.name === 'AbortError') {
+        if (input.signal?.aborted === true) {
           settle({ aborted: true });
           return;
         }
@@ -218,26 +258,6 @@ export class HookRunner {
       child.stdin?.write(payload);
       child.stdin?.end();
     });
-  }
-}
-
-/** Windows 杀进程树（child.kill 只杀壳层 cmd.exe）；POSIX 直接 SIGKILL */
-async function killTree(pid: number | undefined): Promise<void> {
-  if (pid === undefined) {
-    return;
-  }
-  if (process.platform === 'win32') {
-    try {
-      await execAsync(`taskkill /pid ${pid} /t /f`);
-    } catch {
-      // 进程可能刚好已退出
-    }
-    return;
-  }
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch {
-    // 进程可能刚好已退出
   }
 }
 

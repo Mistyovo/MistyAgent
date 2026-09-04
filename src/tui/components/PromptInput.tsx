@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 
 import { Box, Text, useInput } from 'ink';
 
@@ -53,7 +53,12 @@ function LineWithCursor({ line, col }: { line: string; col: number }) {
  * Windows 差异：ConPTY 的 Backspace 到达为 \x7f，ink 解析成 delete，
  * 因此 backspace/delete 统一按“删光标前一个字符”处理。
  */
-export function PromptInput({ busy, queuedCount, disabled, onSubmit }: PromptInputProps) {
+export const PromptInput = memo(function PromptInput({
+  busy,
+  queuedCount,
+  disabled,
+  onSubmit,
+}: PromptInputProps) {
   const [value, setValue] = useState('');
   const [cursor, setCursor] = useState(0);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -159,4 +164,4 @@ export function PromptInput({ busy, queuedCount, disabled, onSubmit }: PromptInp
       {queuedCount > 0 && <Text dimColor>  +{queuedCount} 条消息排队中</Text>}
     </Box>
   );
-}
+});

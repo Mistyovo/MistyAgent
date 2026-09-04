@@ -16,6 +16,41 @@ export interface PrintModeDeps {
 /** 退出前等后台任务自然结束的上限 */
 const TASK_DRAIN_MS = 3000;
 
+/** print 模式读取管道 stdin 的上限：超出截断并注明，防超大输入撑爆上下文 */
+export const PRINT_STDIN_MAX_BYTES = 1024 * 1024;
+
+/**
+ * print 模式解析最终 prompt：stdin 非 TTY（管道/重定向，如 `git diff | misty -p`）时
+ * 读出全部内容，以分隔线拼到 prompt 尾部；TTY 或无内容时原样返回。超过 1MB 截断并注明。
+ */
+export async function resolvePrintPrompt(
+  prompt: string,
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean } = process.stdin,
+): Promise<string> {
+  if (stdin.isTTY === true) {
+    return prompt;
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  let truncated = false;
+  for await (const chunk of stdin) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    if (total + buf.length > PRINT_STDIN_MAX_BYTES) {
+      chunks.push(buf.subarray(0, PRINT_STDIN_MAX_BYTES - total));
+      truncated = true;
+      break;
+    }
+    chunks.push(buf);
+    total += buf.length;
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (text === '') {
+    return prompt;
+  }
+  const body = truncated ? `${text}\n[…stdin 内容超过 1MB，已截断]` : text;
+  return `${prompt}\n\n--- stdin ---\n${body}`;
+}
+
 /**
  * 无头模式（-p/--print）：跑一个 turn，assistant 文本流式写 stdout，
  * 工具调用摘要与错误写 stderr。审批与计划批准请求无法交互，自动拒绝并回喂说明。

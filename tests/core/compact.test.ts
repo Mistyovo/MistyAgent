@@ -24,7 +24,7 @@ function makeMessages(pairs: number, contentLength = 40): Message[] {
 }
 
 describe('estimateTokens', () => {
-  it('每条消息固定开销 + 字符数 / 4', () => {
+  it('每条消息固定开销 + 分段估算（ASCII 4 字符/token，reasoning 不计入）', () => {
     const messages: Message[] = [
       { role: 'user', content: 'x'.repeat(40) },
       {
@@ -34,8 +34,9 @@ describe('estimateTokens', () => {
         toolCalls: [{ id: 'c1', name: 'bash', arguments: '{"command":"echo 1"}' }],
       },
     ];
-    // user: 4 + 10；assistant: 4 + ceil((40+8+4+21)/4)
-    const expected = 4 + 10 + (4 + Math.ceil((40 + 8 + 4 + '{"command":"echo 1"}'.length) / 4));
+    // user: 4 + 40/4；assistant: 4 + 40/4 + 4/4 + ceil(21/4)；reasoning 不回传 API 不计入
+    const expected =
+      4 + 10 + (4 + 10 + Math.ceil(4 / 4) + Math.ceil('{"command":"echo 1"}'.length / 4));
     expect(estimateTokens(messages)).toBe(expected);
   });
 });
@@ -64,15 +65,15 @@ describe('maybeCompactHistory', () => {
       provider,
       model: 'fake',
       messages,
-      maxContextTokens: 10,
+      maxContextTokens: 200,
     });
 
     expect(result).not.toBeNull();
     expect(result!.beforeCount).toBe(12);
     expect(result!.afterCount).toBe(5);
     expect(provider.requests).toHaveLength(1);
-    // 摘要请求：原历史 + 摘要 prompt
-    expect(provider.requests[0]!.messages).toHaveLength(13);
+    // 摘要请求按预算截窗（每条 15 token，预算 100 → 尾部 6 条）：省略概况 + 窗口 + prompt
+    expect(provider.requests[0]!.messages).toHaveLength(8);
     expect(provider.requests[0]!.tools).toEqual([]);
     expect(messages).toHaveLength(5);
     expect(messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n这是摘要' });

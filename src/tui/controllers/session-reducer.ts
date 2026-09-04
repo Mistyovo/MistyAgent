@@ -5,6 +5,8 @@ import type { QuestionRequest } from '#/core/question';
 import type { TodoItem } from '#/core/todos';
 import type { TokenUsage } from '#/provider/types';
 
+import { completeLinesOnly } from './stream-utils';
+
 /**
  * Session 事件 → UI 状态的纯聚合层（不依赖 React，直接配单测）。
  * blocks 是已完成、进 Static 区的内容；streaming 是进行中的流式输出。
@@ -21,6 +23,8 @@ export interface AssistantBlock {
   kind: 'assistant';
   text: string;
   reasoning: string | null;
+  /** 同一段流式输出的续块（前一块也是 assistant）：渲染时不留块间距，拼回一整段 */
+  continuation: boolean;
 }
 
 export interface ToolBlock {
@@ -90,6 +94,9 @@ export interface SessionUiState {
 
 export type DescribeCall = (name: string, input: unknown) => string;
 
+/** 流式缓冲的增量冲刷阈值（完整行数） */
+export const STREAM_FLUSH_THRESHOLD_LINES = 20;
+
 function formatTokens(count: number): string {
   return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
@@ -115,6 +122,31 @@ function pushBlock(state: SessionUiState, block: BlockWithoutId): SessionUiState
   };
 }
 
+/** 完整行数（'\n' 个数）；增量冲刷的触发条件 */
+function countCompleteLines(text: string): number {
+  let count = 0;
+  let index = text.indexOf('\n');
+  while (index !== -1) {
+    count += 1;
+    index = text.indexOf('\n', index + 1);
+  }
+  return count;
+}
+
+/** 续块判定：前一块也是 assistant → 同一段流式输出的后续部分 */
+function pushAssistantBlock(
+  state: SessionUiState,
+  text: string,
+  reasoning: string | null,
+): SessionUiState {
+  return pushBlock(state, {
+    kind: 'assistant',
+    text,
+    reasoning,
+    continuation: state.blocks.at(-1)?.kind === 'assistant',
+  });
+}
+
 /** 流式缓冲区有内容则落成 assistant block 并清空；active 状态保持不变 */
 function flushStreaming(state: SessionUiState): SessionUiState {
   const { text, reasoning } = state.streaming;
@@ -122,8 +154,37 @@ function flushStreaming(state: SessionUiState): SessionUiState {
     return state;
   }
   return {
-    ...pushBlock(state, { kind: 'assistant', text, reasoning: reasoning === '' ? null : reasoning }),
+    ...pushAssistantBlock(state, text, reasoning === '' ? null : reasoning),
     streaming: { ...state.streaming, text: '', reasoning: '' },
+  };
+}
+
+/**
+ * 增量冲刷：完整行达阈值即落成 assistant block 进 Static 区，动态区只保留尾部，
+ * 避免长流式输出下每个节流帧对全量缓冲重跑 sanitize+折行（O(n²)）与内存累积。
+ * reasoning 先于 text 的块序按阶段保持：text 冲刷会把 reasoning 余量整段带走；
+ * text 段开始后才到达的 reasoning（交错流，罕见）未达阈值时留缓冲随下次 text
+ * 落块，超阈值时单独落块——此时块序不再全局保持 reasoning 在前，是可接受取舍。
+ */
+function flushCompletedLines(state: SessionUiState): SessionUiState {
+  const { text, reasoning } = state.streaming;
+  if (text === '') {
+    if (countCompleteLines(reasoning) < STREAM_FLUSH_THRESHOLD_LINES) {
+      return state;
+    }
+    const { complete, rest } = completeLinesOnly(reasoning);
+    return {
+      ...pushAssistantBlock(state, '', complete),
+      streaming: { ...state.streaming, reasoning: rest },
+    };
+  }
+  if (countCompleteLines(text) < STREAM_FLUSH_THRESHOLD_LINES) {
+    return state;
+  }
+  const { complete, rest } = completeLinesOnly(text);
+  return {
+    ...pushAssistantBlock(state, complete, reasoning === '' ? null : reasoning),
+    streaming: { ...state.streaming, text: rest, reasoning: '' },
   };
 }
 
@@ -133,19 +194,19 @@ export function reduceSubmit(state: SessionUiState, text: string): SessionUiStat
   return state.streaming.active ? { ...withBlock, queuedCount: state.queuedCount + 1 } : withBlock;
 }
 
-/** 节流后的流式 delta 同步：把缓冲的 text/reasoning 追加进 streaming */
+/** 节流后的流式 delta 同步：把缓冲的 text/reasoning 追加进 streaming，完整行超阈值则增量冲刷 */
 export function reduceStreamSync(state: SessionUiState, text: string, reasoning: string): SessionUiState {
   if (!state.streaming.active || (text === '' && reasoning === '')) {
     return state;
   }
-  return {
+  return flushCompletedLines({
     ...state,
     streaming: {
       ...state.streaming,
       text: state.streaming.text + text,
       reasoning: state.streaming.reasoning + reasoning,
     },
-  };
+  });
 }
 
 /** 弹窗已回复（UI 动作）：队首出队，露出队列中下一个弹窗 */

@@ -400,3 +400,40 @@ describe('后台任务 loop 集成', () => {
     );
   }, 15000);
 });
+
+describe('TaskManager 输出分段缓冲', () => {
+  it('高频小 chunk 追加：截断语义不变，与整段写入只留尾部上限逐字节一致', () => {
+    const manager = makeManager();
+    const handle = manager.startAgent('agent 高频输出');
+    const totalChunks = 20_000;
+    const chunks: string[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = `line-${i}\n`;
+      chunks.push(chunk);
+      handle.appendOutput(chunk);
+    }
+    const output = manager.output(handle.task.id)!.output;
+    expect(output.length).toBeLessThanOrEqual(TASK_MAX_OUTPUT_CHARS);
+    expect(output.endsWith(`line-${totalChunks - 1}\n`)).toBe(true);
+    expect(output).not.toContain('line-0\n');
+    expect(output).toBe(chunks.join('').slice(-TASK_MAX_OUTPUT_CHARS));
+    handle.settle(0);
+  });
+
+  it('读取时拼接物化：多次读取结果一致，落定 tail 与当前输出一致', () => {
+    const manager = makeManager();
+    const tails: string[] = [];
+    manager.onFinished((_task, tail) => {
+      tails.push(tail);
+    });
+    const handle = manager.startAgent('agent 分段读取');
+    handle.appendOutput('aaa');
+    handle.appendOutput('bbb');
+    expect(manager.output(handle.task.id)!.output).toBe('aaabbb');
+    expect(manager.output(handle.task.id)!.output).toBe('aaabbb');
+    handle.appendOutput('ccc');
+    expect(manager.output(handle.task.id)!.output).toBe('aaabbbccc');
+    handle.settle(0);
+    expect(tails).toEqual(['aaabbbccc']);
+  });
+});

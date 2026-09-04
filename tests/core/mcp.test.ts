@@ -1,9 +1,10 @@
 import { fileURLToPath } from 'node:url';
 
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
 
 import { settingsSchema, type McpServerConfig } from '#/config/schema';
-import { McpClient } from '#/core/mcp/client';
+import { MCP_CALL_TIMEOUT_MS, McpClient, type McpCallOptions } from '#/core/mcp/client';
 import { McpManager } from '#/core/mcp/manager';
 import { adaptMcpTool } from '#/core/mcp/tool-adapter';
 import { evaluatePermission, type PermissionContext } from '#/core/permission/pipeline';
@@ -16,6 +17,12 @@ const cwd = process.cwd();
 const fixturePath = fileURLToPath(new URL('../fixtures/fake-mcp-server.mjs', import.meta.url));
 
 const fakeServer: McpServerConfig = { command: process.execPath, args: [fixturePath] };
+
+/** 永不回包 tools/call 的 server（握手与 listTools 正常），用于中断/超时用例 */
+const hangFixturePath = fileURLToPath(
+  new URL('../fixtures/hang-mcp-server.mjs', import.meta.url),
+);
+const hangServer: McpServerConfig = { command: process.execPath, args: [hangFixturePath] };
 
 /** 真实拉起子进程的用例给足超时（Windows 上 node 启动较慢） */
 const SPAWN_TIMEOUT = 30_000;
@@ -334,4 +341,169 @@ describe('McpManager 降级', () => {
     ]);
     await manager.close();
   });
+});
+
+/** 中断/超时用例的适配工具：client 由用例自定义（模拟 SDK 行为） */
+function adaptWith(client: McpClient, name = 'hang'): Tool {
+  return adaptMcpTool('fake', client, { name, description: '', inputSchema: { type: 'object' } });
+}
+
+describe('MCP 调用中断与超时（适配层）', () => {
+  it('call 把 ctx.signal 透传给 client.callTool', async () => {
+    let observedSignal: unknown;
+    const client = {
+      callTool: async (
+        _name: string,
+        _args: Record<string, unknown>,
+        options?: McpCallOptions,
+      ) => {
+        observedSignal = options?.signal;
+        return { content: [{ type: 'text', text: 'stubbed' }] };
+      },
+    } as unknown as McpClient;
+    const controller = new AbortController();
+    const result = await adaptWith(client, 'echo').call(
+      {},
+      { cwd, signal: controller.signal },
+    );
+    expect(result.isError).toBeUndefined();
+    expect(observedSignal).toBe(controller.signal);
+  });
+
+  it('abort 后永不落定的调用以 isError 落定（不挂死）', async () => {
+    // 模拟 SDK 行为：signal abort 时把 reason 包成 McpError reject
+    const client = {
+      callTool: (_name: string, _args: Record<string, unknown>, options?: McpCallOptions) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => reject(new McpError(ErrorCode.RequestTimeout, String(options.signal?.reason))),
+            { once: true },
+          );
+        }),
+    } as unknown as McpClient;
+    const controller = new AbortController();
+    const pending = adaptWith(client).call({}, { cwd, signal: controller.signal });
+    controller.abort();
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('中断');
+    expect(result.output).toContain('fake:hang');
+  });
+
+  it('signal 已 abort 时调用落定中断结果（SDK 立即 reject）', async () => {
+    const client = {
+      callTool: async (_name: string, _args: Record<string, unknown>, options?: McpCallOptions) => {
+        options?.signal?.throwIfAborted();
+        return { content: [{ type: 'text', text: 'unreachable' }] };
+      },
+    } as unknown as McpClient;
+    const controller = new AbortController();
+    controller.abort();
+    const result = await adaptWith(client).call({}, { cwd, signal: controller.signal });
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('中断');
+  });
+
+  it('RequestTimeout 错误映射为带秒数的超时文案', async () => {
+    const client = {
+      callTool: async () => {
+        throw new McpError(ErrorCode.RequestTimeout, 'Request timed out');
+      },
+    } as unknown as McpClient;
+    const result = await adaptWith(client, 'slow').call(
+      {},
+      { cwd, signal: new AbortController().signal },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain(`超时（${MCP_CALL_TIMEOUT_MS / 1000}s`);
+    expect(result.output).toContain('fake:slow');
+  });
+
+  it('其余错误仍走通用失败文案', async () => {
+    const client = {
+      callTool: async () => {
+        throw new Error('connection reset');
+      },
+    } as unknown as McpClient;
+    const result = await adaptWith(client).call(
+      {},
+      { cwd, signal: new AbortController().signal },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('MCP 工具调用失败：connection reset');
+  });
+});
+
+describe('MCP 调用中断与超时（真实 stdio server 不回包）', () => {
+  it(
+    '在途调用随 abort 以中断 isError 落定',
+    { timeout: SPAWN_TIMEOUT },
+    async () => {
+      const manager = await connectFakeManager({ hanger: hangServer });
+      try {
+        const hang = manager.tools().find((tool) => tool.name === 'mcp__hanger__hang')!;
+        const controller = new AbortController();
+        const pending = hang.call({}, { cwd, signal: controller.signal });
+        // 等请求真正发出（在途）后再中断
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        controller.abort();
+        const result = await pending;
+        expect(result.isError).toBe(true);
+        expect(result.output).toContain('中断');
+        expect(result.output).toContain('hanger:hang');
+      } finally {
+        await manager.close();
+      }
+    },
+  );
+
+  it(
+    'callTool 按 timeoutMs 超时落定（覆盖默认 60s 以便测试）',
+    { timeout: SPAWN_TIMEOUT },
+    async () => {
+      const client = new McpClient('hanger', hangServer, cwd);
+      await client.connect(SPAWN_TIMEOUT);
+      try {
+        await expect(client.callTool('hang', {}, { timeoutMs: 500 })).rejects.toThrow(
+          /timed out/i,
+        );
+      } finally {
+        await client.close();
+      }
+    },
+  );
+
+  it(
+    'Session 集成：interrupt 后卡死的 MCP 调用不阻塞 turn 收尾',
+    { timeout: SPAWN_TIMEOUT },
+    async () => {
+      const manager = await connectFakeManager({ hanger: hangServer });
+      try {
+        const provider = new FakeProvider([
+          toolCallStep([{ name: 'mcp__hanger__hang', arguments: '{}' }]),
+          textStep('不应到达'),
+        ]);
+        const session = new Session({
+          provider,
+          model: 'fake-model',
+          systemPrompt: 'system',
+          tools: manager.tools(),
+          cwd,
+          permission: { mode: 'bypassPermissions' },
+        });
+
+        const submitted = session.submit({ type: 'user-turn', text: 'call hang' });
+        // 等工具调用进入在途状态再中断
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        session.interrupt();
+        const result = await submitted;
+        expect(result.stopReason).toBe('interrupted');
+        // 中断后工具结果落 isError，不会再向模型发起第二步请求
+        expect(provider.requests).toHaveLength(1);
+      } finally {
+        await manager.close();
+      }
+    },
+  );
 });

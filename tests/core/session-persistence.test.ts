@@ -111,11 +111,12 @@ describe('Session 持久化', () => {
       role: 'user',
       content: '[历史对话摘要]\n摘要内容',
     });
-    // 摘要消息也落盘
+    // 摘要消息也落盘，且先于它写入 compact-checkpoint
     const sessionId = session.getSessionId()!;
     const entries = loadTranscript(join(dir, `${sessionId}.jsonl`));
-    expect(entries.map((entry) => entry.type)).toEqual(['meta', 'user', 'user', 'assistant']);
-    expect((entries[2]!.message as { content: string }).content).toContain('摘要内容');
+    expect(entries.map((entry) => entry.type)).toEqual(['meta', 'user', 'meta', 'user', 'assistant']);
+    expect(entries[2]!.message).toMatchObject({ kind: 'compact-checkpoint' });
+    expect((entries[3]!.message as { content: string }).content).toContain('摘要内容');
   });
 
   it('未达压缩阈值时不触发摘要调用', async () => {
@@ -158,5 +159,59 @@ describe('Session 持久化', () => {
     ]);
     // 旧文件不受新会话影响
     expect(loadTranscript(join(dir, `${firstId}.jsonl`))).toHaveLength(3);
+  });
+
+  it('压缩后 resume：从 checkpoint 恢复，历史以摘要开头而非重放原始历史', async () => {
+    const provider = new FakeProvider([textStep('摘要内容'), textStep('回答')]);
+    const session = makeSession(provider, {
+      maxContextTokens: 10,
+      initialMessages: [
+        { role: 'user', content: 'q1' },
+        { role: 'assistant', content: 'a1' },
+        { role: 'user', content: 'q2' },
+        { role: 'assistant', content: 'a2' },
+        { role: 'user', content: 'q3' },
+        { role: 'assistant', content: 'a3' },
+      ],
+    });
+
+    await session.submit({ type: 'user-turn', text: 'hello' });
+
+    const filePath = join(dir, `${session.getSessionId()!}.jsonl`);
+    const resumed = resumeSession(filePath);
+    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要内容' });
+    // checkpoint 之前的 user('hello') 被丢弃，之后只有摘要与新 assistant
+    expect(resumed.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('多次压缩：resume 以最后一个 checkpoint 为准', async () => {
+    const provider = new FakeProvider([textStep('摘要一'), textStep('回答一'), textStep('摘要二')]);
+    const session = makeSession(provider, {
+      maxContextTokens: 10,
+      initialMessages: [
+        { role: 'user', content: 'q1' },
+        { role: 'assistant', content: 'a1' },
+        { role: 'user', content: 'q2' },
+        { role: 'assistant', content: 'a2' },
+        { role: 'user', content: 'q3' },
+        { role: 'assistant', content: 'a3' },
+      ],
+    });
+
+    await session.submit({ type: 'user-turn', text: 'hello' });
+    // 第一次压缩后历史为 摘要+保留尾部+回答一（>keepRecent），可再次手动压缩
+    expect(await session.compactNow()).toBe(true);
+    expect(session.getMessages()[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要二' });
+
+    const filePath = join(dir, `${session.getSessionId()!}.jsonl`);
+    const checkpoints = loadTranscript(filePath).filter(
+      (entry) =>
+        entry.type === 'meta' &&
+        (entry.message as { kind?: unknown }).kind === 'compact-checkpoint',
+    );
+    expect(checkpoints).toHaveLength(2);
+
+    const resumed = resumeSession(filePath);
+    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要二' });
   });
 });

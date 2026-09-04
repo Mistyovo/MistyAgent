@@ -26,12 +26,23 @@ export function extractPath(input: unknown): string | null {
   return null;
 }
 
+// 规则来自静态配置，同一 pattern 会反复匹配；连非法 pattern 的 null 也缓存，避免重复编译
+const globCache = new Map<string, ((value: string) => boolean) | null>();
+
 function compileGlob(pattern: string, nocase = false): ((value: string) => boolean) | null {
-  try {
-    return picomatch(pattern, { dot: true, nocase });
-  } catch {
-    return null;
+  const key = `${nocase}:${pattern}`;
+  const cached = globCache.get(key);
+  if (cached !== undefined) {
+    return cached;
   }
+  let compiled: ((value: string) => boolean) | null;
+  try {
+    compiled = picomatch(pattern, { dot: true, nocase });
+  } catch {
+    compiled = null;
+  }
+  globCache.set(key, compiled);
+  return compiled;
 }
 
 /** glob 元字符出现在规则 tool 字段时按 glob 匹配工具名（如 mcp__filesystem__*） */

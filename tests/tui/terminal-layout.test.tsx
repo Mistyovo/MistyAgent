@@ -331,3 +331,63 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
     }
   }, 15_000);
 });
+
+describe('长流式输出的增量冲刷', () => {
+  it('45 行输出：完整行超 20 行阈值即增量 flush 进 Static 区，拼接完整、每行恰好一次、无残帧', async () => {
+    let releaseRest!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseRest = resolve;
+    });
+    const provider: ChatProvider = {
+      async *generate(): AsyncGenerator<StreamedMessagePart, void, unknown> {
+        for (let i = 0; i < 30; i += 1) {
+          yield { type: 'text-delta', text: `第${i}行内容\n` };
+          if (i % 5 === 4) {
+            await sleep(60); // 让 50ms 节流分批吐帧，增量 flush 在流式进行中触发
+          }
+        }
+        await gate; // 闸门：前 30 行已超阈值，必然已增量冲刷进 Static 区
+        for (let i = 30; i < 45; i += 1) {
+          yield { type: 'text-delta', text: `第${i}行内容\n` };
+        }
+        yield { type: 'text-delta', text: '末尾TAIL' };
+        yield {
+          type: 'done',
+          usage: { inputTokens: 12, outputTokens: 8 },
+          finishReason: 'completed',
+          rawFinishReason: 'stop',
+        };
+      },
+    };
+    const { stdout, stdin, instance } = mountTerminalApp(provider, 'narrow');
+    try {
+      await sleep(100);
+      stdin.write('go');
+      await sleep(100);
+      stdin.write('\r');
+      await waitForText(stdout, '第29行内容');
+      await sleep(200); // 等节流帧与增量 flush 落盘
+      const mid = stdout.content();
+      // 中途态：前段已上屏且唯一，后段还在 provider 闸门后
+      expect(occurrences(mid, '第0行内容')).toBe(1);
+      expect(mid).not.toContain('第30行内容');
+      expect(maxBlankRun(mid)).toBeLessThanOrEqual(2);
+      releaseRest();
+      await waitForText(stdout, '末尾TAIL');
+      await sleep(300);
+      const content = stdout.content();
+      dumpOnDemand(content, 'incremental-flush');
+      // Static 区增量块与动态区尾部拼接正确：首/中/尾各恰好一次，顺序不变
+      expect(occurrences(content, '第0行内容')).toBe(1);
+      expect(occurrences(content, '第22行内容')).toBe(1);
+      expect(occurrences(content, '第44行内容')).toBe(1);
+      expect(occurrences(content, '末尾TAIL')).toBe(1);
+      expect(content.indexOf('第0行内容')).toBeLessThan(content.indexOf('第22行内容'));
+      expect(content.indexOf('第22行内容')).toBeLessThan(content.indexOf('第44行内容'));
+      expect(content.indexOf('第44行内容')).toBeLessThan(content.indexOf('末尾TAIL'));
+      expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
+    } finally {
+      instance.unmount();
+    }
+  }, 15_000);
+});

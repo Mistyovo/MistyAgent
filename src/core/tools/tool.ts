@@ -60,33 +60,55 @@ export interface ToolSpec<Schema extends z.ZodType> {
 export function defineTool<Schema extends z.ZodType>(
   def: ToolSpec<Schema>,
 ): Tool {
+  // 同一 input 对象会依次流经权限流水线、调度与执行，每处都过同一 schema；
+  // 以对象引用为键缓存 parse 结果（WeakMap 随 input 回收），一条调用链只 parse 一次。
+  // 约定 input 在链路中只读；原始值无法做 WeakMap 键，直接每次 parse。
+  const parseCache = new WeakMap<object, z.ZodSafeParseResult<z.output<Schema>>>();
+  const parseInput = (input: unknown): z.ZodSafeParseResult<z.output<Schema>> => {
+    if (typeof input !== 'object' || input === null) {
+      return def.inputSchema.safeParse(input);
+    }
+    const cached = parseCache.get(input);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const parsed = def.inputSchema.safeParse(input);
+    parseCache.set(input, parsed);
+    return parsed;
+  };
   return {
     name: def.name,
     description: def.description,
     inputSchema: def.inputSchema,
     ...(def.interactive === true ? { interactive: true } : {}),
     isReadOnly: (input) => {
-      const parsed = def.inputSchema.safeParse(input);
+      const parsed = parseInput(input);
       if (!parsed.success) {
         return false;
       }
       return def.isReadOnly?.(parsed.data) ?? false;
     },
     accesses: (input) => {
-      const parsed = def.inputSchema.safeParse(input);
+      const parsed = parseInput(input);
       if (!parsed.success) {
         return [{ kind: 'execute' }];
       }
       return def.accesses?.(parsed.data) ?? [{ kind: 'execute' }];
     },
     describeCall: (input) => {
-      const parsed = def.inputSchema.safeParse(input);
+      const parsed = parseInput(input);
       if (!parsed.success || def.describeCall === undefined) {
         return def.name;
       }
       return def.describeCall(parsed.data);
     },
-    call: (input, ctx) => def.call(def.inputSchema.parse(input), ctx),
+    call: (input, ctx) => {
+      const parsed = parseInput(input);
+      if (!parsed.success) {
+        throw parsed.error;
+      }
+      return def.call(parsed.data, ctx);
+    },
     toJSONSchema: () => ({
       name: def.name,
       description: def.description,

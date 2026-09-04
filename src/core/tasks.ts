@@ -53,10 +53,68 @@ interface TaskHandle {
 interface TrackedTask {
   snapshot: BackgroundTask;
   handle: TaskHandle;
-  output: string;
+  /** 输出分段缓冲：append 只 push + 计数，超限才物化拼接截尾（摊还 O(1)），读取时拼接 */
+  outputChunks: string[];
+  outputLength: number;
   /** stop 主动发起过终止：落定后状态记 killed 而不是 failed */
   killRequested: boolean;
   waiters: Array<() => void>;
+}
+
+/**
+ * 杀整棵进程树（后台任务 / bash 前台 / hooks 共用）。
+ * Windows：taskkill /pid <pid> /t /f（child.kill 只杀壳层 cmd.exe，子进程会成孤儿），
+ * 失败兜底 child.kill()。POSIX：调用方需以 detached 启动使壳进程成为进程组组长，
+ * 负 pid 向整组发 SIGTERM，500ms 未退出升级 SIGKILL。
+ */
+export async function killTree(child: ChildProcess): Promise<void> {
+  const pid = child.pid;
+  if (process.platform === 'win32') {
+    if (pid !== undefined) {
+      try {
+        await execAsync(`taskkill /pid ${pid} /t /f`);
+        return;
+      } catch {
+        // 进程可能刚好已退出；兜底 child.kill
+      }
+    }
+    child.kill();
+    return;
+  }
+  const killGroup = (signal: NodeJS.Signals): void => {
+    try {
+      if (pid !== undefined) {
+        process.kill(-pid, signal);
+        return;
+      }
+    } catch {
+      // 组已不存在，退化为只杀壳进程
+    }
+    child.kill(signal);
+  };
+  killGroup('SIGTERM');
+  if (!(await waitForExit(child, 500))) {
+    killGroup('SIGKILL');
+  }
+}
+
+/** 等 child 触发 exit（已退出立即返回 true），超时返回 false */
+function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout>;
+    const onExit = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    timer = setTimeout(() => {
+      child.off('exit', onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.on('exit', onExit);
+  });
 }
 
 /**
@@ -64,10 +122,7 @@ interface TrackedTask {
  * 承载两种任务：bash 子进程与 agent 子代理 loop。
  * spawn(command, { shell: true }) 与 bash 工具前台路径同属 cmd.exe / sh 语义；
  * 任务不绑定 turn 的 AbortSignal——interrupt / turn 结束不影响后台任务。
- *
- * Windows 杀进程树：taskkill /pid <pid> /t /f（child.kill 只杀壳层 cmd.exe，
- * 子进程会成孤儿）；失败兜底 child.kill()。POSIX：detached 使子进程成为
- * 进程组组长，负 pid 向整组发 SIGTERM，500ms 未退出升级 SIGKILL。
+ * 杀进程树统一走模块级共享 killTree（bash 前台 / hooks 同用）。
  */
 export class TaskManager {
   private readonly tasks = new Map<string, TrackedTask>();
@@ -97,10 +152,10 @@ export class TaskManager {
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const handle: TaskHandle = { pid: child.pid, terminate: () => Promise.resolve() };
-    const tracked = this.register('bash', command, handle);
-    // terminate 需要任务 id（POSIX 升级 SIGKILL 前按 id 查状态），注册后回填
-    handle.terminate = () => this.killTree(tracked.snapshot.id, child);
+    const tracked = this.register('bash', command, {
+      pid: child.pid,
+      terminate: () => killTree(child),
+    });
     child.stdout?.on('data', (chunk: Buffer) => {
       this.appendOutput(tracked, chunk.toString('utf8'));
     });
@@ -147,7 +202,7 @@ export class TaskManager {
     if (tracked === undefined) {
       return null;
     }
-    return { task: { ...tracked.snapshot }, output: tracked.output };
+    return { task: { ...tracked.snapshot }, output: this.readOutput(tracked) };
   }
 
   get(taskId: string): BackgroundTask | null {
@@ -207,7 +262,8 @@ export class TaskManager {
     const tracked: TrackedTask = {
       snapshot: { id, kind, command, status: 'running', pid: handle.pid, startedAt: Date.now() },
       handle,
-      output: '',
+      outputChunks: [],
+      outputLength: 0,
       killRequested: false,
       waiters: [],
     };
@@ -219,10 +275,22 @@ export class TaskManager {
   }
 
   private appendOutput(tracked: TrackedTask, text: string): void {
-    tracked.output += text;
-    if (tracked.output.length > TASK_MAX_OUTPUT_CHARS) {
-      tracked.output = tracked.output.slice(-TASK_MAX_OUTPUT_CHARS);
+    tracked.outputChunks.push(text);
+    tracked.outputLength += text.length;
+    if (tracked.outputLength > TASK_MAX_OUTPUT_CHARS) {
+      // 超限：物化为单段并只保留尾部，之后重新累积分段
+      const kept = tracked.outputChunks.join('').slice(-TASK_MAX_OUTPUT_CHARS);
+      tracked.outputChunks = [kept];
+      tracked.outputLength = kept.length;
     }
+  }
+
+  /** 当前输出：读取时拼接分段并物化回单段，后续读取零拼接开销 */
+  private readOutput(tracked: TrackedTask): string {
+    if (tracked.outputChunks.length > 1) {
+      tracked.outputChunks = [tracked.outputChunks.join('')];
+    }
+    return tracked.outputChunks[0] ?? '';
   }
 
   private settle(tracked: TrackedTask, code: number | null): void {
@@ -235,43 +303,11 @@ export class TaskManager {
     for (const notify of waiters) {
       notify();
     }
-    const tail = tracked.output.slice(-TASK_FINISHED_TAIL_CHARS);
+    const tail = this.readOutput(tracked).slice(-TASK_FINISHED_TAIL_CHARS);
     const snapshot = { ...tracked.snapshot };
     const runningCount = this.runningCount();
     for (const callback of this.finishedCallbacks) {
       callback(snapshot, tail, runningCount);
-    }
-  }
-
-  private async killTree(id: string, child: ChildProcess): Promise<void> {
-    const pid = child.pid;
-    if (process.platform === 'win32') {
-      if (pid !== undefined) {
-        try {
-          await execAsync(`taskkill /pid ${pid} /t /f`);
-          return;
-        } catch {
-          // 进程可能刚好已退出；兜底 child.kill
-        }
-      }
-      child.kill();
-      return;
-    }
-    const killGroup = (signal: NodeJS.Signals): void => {
-      try {
-        if (pid !== undefined) {
-          process.kill(-pid, signal);
-          return;
-        }
-      } catch {
-        // 组已不存在，退化为只杀壳进程
-      }
-      child.kill(signal);
-    };
-    killGroup('SIGTERM');
-    await this.waitForSettled(id, 500);
-    if (this.tasks.get(id)?.snapshot.status === 'running') {
-      killGroup('SIGKILL');
     }
   }
 }

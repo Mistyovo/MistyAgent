@@ -28,7 +28,13 @@ import type { TaskManager } from '../tasks';
 import type { TodoStore } from '../todos';
 import type { Tool } from '../tools/tool';
 
-import { MISTY_VERSION, transcriptDirFor, TranscriptWriter, type SessionMeta } from './transcript';
+import {
+  MISTY_VERSION,
+  transcriptDirFor,
+  TranscriptWriter,
+  type CompactCheckpointMeta,
+  type SessionMeta,
+} from './transcript';
 
 export interface SessionConfig {
   provider: ChatProvider;
@@ -414,12 +420,29 @@ export class Session {
   }
 
   private afterCompaction(result: CompactResult): void {
-    // 压缩后 messages[0] 是摘要消息，落盘保持 transcript 与内存历史一致
+    // 压缩后 messages[0] 是摘要消息；checkpoint 必须先于摘要落盘，
+    // resume 丢弃 checkpoint 及之前的原始历史，从摘要恢复
     const summary = this.messages[0];
     if (summary !== undefined) {
+      this.persistCheckpoint(result);
       this.persist(summary);
     }
     this.dispatch({ type: 'compacted', ...result });
+  }
+
+  private persistCheckpoint(result: CompactResult): void {
+    try {
+      const checkpoint: CompactCheckpointMeta = {
+        kind: 'compact-checkpoint',
+        beforeCount: result.beforeCount,
+        afterCount: result.afterCount,
+        beforeTokens: result.beforeTokens,
+        afterTokens: result.afterTokens,
+      };
+      this.transcript?.writer.append('meta', checkpoint);
+    } catch {
+      // 落盘失败不阻断会话
+    }
   }
 
   private pump(): void {

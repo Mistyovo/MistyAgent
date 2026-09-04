@@ -37,6 +37,8 @@ export interface ToolBlock {
   input: unknown;
   status: 'running' | 'done';
   output: string | null;
+  /** 输出超预览行数时的全量落盘路径（截断提示行展示）；未落盘为 null */
+  outputFile: string | null;
   isError: boolean;
   durationMs: number | null;
 }
@@ -252,6 +254,7 @@ export function reduceEvent(
         input: event.input,
         status: 'running',
         output: null,
+        outputFile: null,
         isError: false,
         durationMs: null,
       });
@@ -271,6 +274,7 @@ export function reduceEvent(
           input: event.input,
           status: 'done',
           output: event.output,
+          outputFile: event.outputFile ?? null,
           isError: event.isError,
           durationMs: event.durationMs,
         });
@@ -283,6 +287,7 @@ export function reduceEvent(
                 ...block,
                 status: 'done' as const,
                 output: event.output,
+                outputFile: event.outputFile ?? null,
                 isError: event.isError,
                 durationMs: event.durationMs,
               }

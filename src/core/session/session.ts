@@ -15,6 +15,7 @@ import type { AgentEvent, EventListener, TurnStopReason } from '../events';
 import { HookRunner } from '../hooks';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
 import type { ApprovalReplyOp, PlanApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
+import { spillToolOutput } from '../output-spill';
 import { ApprovalManager } from '../permission/approval';
 import type { PermissionContext, PermissionRuntime } from '../permission/pipeline';
 import {
@@ -387,6 +388,18 @@ export class Session {
     }
   }
 
+  /**
+   * 工具输出超预览行数时全量落盘（core/output-spill），事件补 outputFile 供展示层引用；
+   * output 保持全量不变。无 transcript 的会话（测试等）共享 'interactive' 键。
+   */
+  private withOutputSpill(event: AgentEvent): AgentEvent {
+    if (event.type !== 'tool-call-completed') {
+      return event;
+    }
+    const outputFile = spillToolOutput(event.output, this.transcript?.sessionId ?? 'interactive');
+    return outputFile === null ? event : { ...event, outputFile };
+  }
+
   private async maybeCompact(): Promise<void> {
     const result = await maybeCompactHistory({
       provider: this.config.provider,
@@ -481,7 +494,7 @@ export class Session {
       fallbackModels: this.config.fallbackModels,
       signal: controller.signal,
       dispatchEvent: (event) => {
-        this.dispatch(event);
+        this.dispatch(this.withOutputSpill(event));
       },
       permission: this.permission,
       hooks: this.hookRunner ?? undefined,

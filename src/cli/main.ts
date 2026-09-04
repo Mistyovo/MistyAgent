@@ -8,6 +8,7 @@ import {
 } from '#/config/settings';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { McpManager } from '#/core/mcp/manager';
+import { cleanupSpilledOutputs } from '#/core/output-spill';
 import type { PlanModeHost } from '#/core/plan-mode';
 import { Session, type SessionConfig } from '#/core/session/session';
 import {
@@ -124,6 +125,9 @@ function resolveResumeTarget(options: CliOptions, cwd: string): SessionSummary |
 
 async function action(options: CliOptions): Promise<void> {
   const cwd = process.cwd();
+
+  // 清理过期的工具输出落盘文件（os.tmpdir()/misty-output，超 24h 的删除）
+  cleanupSpilledOutputs();
 
   let loaded: LoadedSettings;
   try {

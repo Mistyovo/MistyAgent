@@ -17,6 +17,7 @@ import { QuestionDialog } from './components/QuestionDialog';
 import { StatusBar } from './components/StatusBar';
 import { StreamingArea } from './components/StreamingArea';
 import { TodoList } from './components/TodoList';
+import type { PendingDialog } from './controllers/session-reducer';
 import { useSessionController } from './controllers/session-events';
 
 export interface AppProps {
@@ -35,7 +36,9 @@ const EXIT_ARM_MS = 3000;
  * - Esc：中断进行中的 turn（弹窗打开时由弹窗处理：审批=拒绝，提问=跳过，计划批准=拒绝）
  * - Shift+Tab：循环切换权限模式（Windows 终端到达为 \x1b[Z，ink 解析为 tab+shift）；
  *   切到 plan 即进入完整计划模式，计划模式中切走即退出（Session.setPermissionMode 内聚）
- * - Ctrl+C：第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出
+ * - Ctrl+C：第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出。
+ *   弹窗打开时也生效：第一下关闭弹窗（按拒绝处理）并顺手中断 turn，第二下退出；
+ *   其余键位在弹窗期间仍让给弹窗（保持现有语义）
  *
  * 输入路由：/ 开头走斜杠命令框架（不进 session.submit），其余按 user-turn 提交。
  */
@@ -50,6 +53,20 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
 
   const busy = state.streaming.active;
   const dialog = state.pendingDialogs[0] ?? null;
+
+  /** 弹窗期间 Ctrl+C 的"按拒绝关闭"：与弹窗各自 Esc 的语义一致（审批=拒绝，提问=跳过，计划批准=拒绝） */
+  const rejectDialog = (pending: PendingDialog): void => {
+    switch (pending.kind) {
+      case 'approval':
+        replyApproval(pending.request.id, { decision: 'reject' });
+        return;
+      case 'question':
+        replyQuestion(pending.request.id, { cancelled: true });
+        return;
+      case 'plan-approval':
+        replyPlanApproval(pending.request.id, { approved: false });
+    }
+  };
 
   // 计划模式进/退可由模型工具在 turn 内触发（权限模式随之切换），状态栏经事件同步；
   // 模型 fallback 仅当前 turn 生效（session 模型不变），状态栏跟随事件，turn 结束回读主模型
@@ -79,7 +96,9 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
   );
 
   useInput((input, key) => {
-    if (dialog !== null) {
+    const ctrlC = key.ctrl && input === 'c';
+    // 弹窗期间只有 Ctrl+C 仍由全局处理，其余键位让给弹窗
+    if (dialog !== null && !ctrlC) {
       return;
     }
     if (key.escape) {
@@ -94,7 +113,11 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
       setMode(next);
       return;
     }
-    if (key.ctrl && input === 'c') {
+    if (ctrlC) {
+      // 弹窗打开时先按拒绝关闭（核心侧 reply 幂等：interrupt 已落定的回复返回 false）
+      if (dialog !== null) {
+        rejectDialog(dialog);
+      }
       if (busy) {
         session.interrupt();
       }

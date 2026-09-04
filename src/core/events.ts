@@ -43,6 +43,8 @@ export interface ToolCallCompletedEvent {
   name: string;
   input: unknown;
   output: string;
+  /** 输出超预览行数时全量落盘的路径（core/output-spill）；未落盘时缺省 */
+  outputFile?: string;
   isError: boolean;
   durationMs: number;
 }

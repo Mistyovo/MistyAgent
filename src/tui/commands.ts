@@ -136,7 +136,10 @@ const mcp: SlashCommand = {
 export const slashCommands: SlashCommand[] = [help, clear, model, mode, compact, mcp, exit];
 
 export function isSlashCommand(text: string): boolean {
-  return text.trim().startsWith('/');
+  // 含换行的输入不判命令：单行输入敲不出 \n（Enter 即提交），多行文本只会来自
+  // 粘贴或 Alt+Enter/`\` 续行——粘贴的 / 开头文本（如多行路径、日志）按普通消息提交。
+  // 单行未知命令仍只提示不进模型（现状语义）：命令敲错应得到反馈，而不是静默发给模型。
+  return !text.includes('\n') && text.trim().startsWith('/');
 }
 
 /** 解析并执行斜杠命令；调用前需用 isSlashCommand 判定 */

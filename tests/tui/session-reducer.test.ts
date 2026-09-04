@@ -89,6 +89,45 @@ describe('reduceEvent 流式聚合', () => {
     expect(c2).toMatchObject({ status: 'done', output: 'ok', isError: false, durationMs: 12 });
   });
 
+  it('tool-call-completed 携带 outputFile 时落到工具块；started 阶段为 null', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'tool-call-started', toolCallId: 'c1', name: 'bash', input: {} },
+      {
+        type: 'tool-call-completed',
+        toolCallId: 'c1',
+        name: 'bash',
+        input: {},
+        output: 'l1\nl2\nl3\nl4',
+        outputFile: '/tmp/misty-output/sess-1.log',
+        isError: false,
+        durationMs: 3,
+      },
+    );
+    const block = state.blocks.find((b) => b.kind === 'tool') as ToolBlock;
+    expect(block.outputFile).toBe('/tmp/misty-output/sess-1.log');
+  });
+
+  it('tool-call-completed 不带 outputFile 时工具块为 null（未落盘）', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'tool-call-started', toolCallId: 'c1', name: 'bash', input: {} },
+      {
+        type: 'tool-call-completed',
+        toolCallId: 'c1',
+        name: 'bash',
+        input: {},
+        output: 'short',
+        isError: false,
+        durationMs: 3,
+      },
+    );
+    const block = state.blocks.find((b) => b.kind === 'tool') as ToolBlock;
+    expect(block.outputFile).toBeNull();
+  });
+
   it('权限拒绝的调用没有 started 事件：completed 直接落完成块（拒绝在 TUI 可见）', () => {
     const state = run(
       initialSessionUiState(),

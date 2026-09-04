@@ -2,10 +2,12 @@ import { memo } from 'react';
 
 import { Box, Static, Text } from 'ink';
 
+import { TOOL_OUTPUT_PREVIEW_LINES } from '#/core/output-spill';
+
 import type { ToolBlock, UiBlock } from '../controllers/session-reducer';
 import { useTerminalTextWrap } from '../terminal-text';
 
-const OUTPUT_PREVIEW_LINES = 3;
+const OUTPUT_PREVIEW_LINES = TOOL_OUTPUT_PREVIEW_LINES;
 
 function ToolBlockView({ block }: { block: ToolBlock }) {
   const wrap = useTerminalTextWrap();
@@ -31,7 +33,16 @@ function ToolBlockView({ block }: { block: ToolBlock }) {
               {wrap(line, 2)}
             </Text>
           ))}
-          {hidden > 0 && <Text dimColor>… 还有 {hidden} 行</Text>}
+          {hidden > 0 && (
+            <Text dimColor>
+              {wrap(
+                block.outputFile === null
+                  ? `… 还有 ${hidden} 行`
+                  : `… 还有 ${hidden} 行，完整输出: ${block.outputFile}`,
+                2,
+              )}
+            </Text>
+          )}
         </Box>
       )}
     </Box>

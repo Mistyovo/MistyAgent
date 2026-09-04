@@ -1,13 +1,24 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { render } from 'ink-testing-library';
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { Session } from '#/core/session/session';
 import { TodoStore } from '#/core/todos';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
+import { defineTool } from '#/core/tools/tool';
 import { App } from '#/tui/App';
 import type { ChatProvider } from '#/provider/types';
 
 import { FakeProvider, textStep, toolCallStep } from '../core/fake-provider';
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 剥掉全部空白：物理折行会断开长路径，wrap 后再比较时用它归一化 */
+const flat = (s: string): string => s.replace(/\s+/g, '');
 
 function makeApp(provider: ChatProvider) {
   const registry = createBuiltinRegistry();
@@ -412,5 +423,172 @@ describe('App 交互（ink-testing-library）', () => {
       expect(lastFrame()).toContain('primary-model  ? default');
     });
     expect(session.getModel()).toBe('primary-model');
+  });
+
+  it('粘贴的多行 / 开头文本不误判为斜杠命令，按普通消息进 session', async () => {
+    const provider = new FakeProvider([textStep('收到')]);
+    const { lastFrame, stdin } = makeApp(provider);
+    // 粘贴一次性到达（含 \n）：不走 /help 命令
+    stdin.write('/help\n第二行');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('第二行');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('收到');
+    });
+    expect(lastFrame()).not.toContain('可用命令');
+    const userMessage = provider.requests[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).toBe('/help\n第二行');
+  });
+
+  it('单行未知斜杠命令：提示未知命令，不进模型（现状语义保持）', async () => {
+    const provider = new FakeProvider([textStep('不应到达')]);
+    const { lastFrame, stdin } = makeApp(provider);
+    stdin.write('/nosuchcmd');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('/nosuchcmd');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('未知命令：/nosuchcmd');
+    });
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('空闲时 Esc 清空当前输入（不中断、不提交）', async () => {
+    const provider = new FakeProvider([textStep('ok')]);
+    const { lastFrame, stdin } = makeApp(provider);
+    stdin.write('draft');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('draft');
+    });
+    stdin.write('\x1b');
+    await vi.waitFor(() => {
+      expect(lastFrame()).not.toContain('draft');
+    });
+    stdin.write('\r'); // 空输入不提交
+    await sleep(80);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('弹窗期间 Ctrl+C：第一下关弹窗（按拒绝）并中断 turn、预位退出，第二下退出', async () => {
+    const provider = new FakeProvider([
+      [
+        { type: 'tool-call-start', index: 0, id: 'call_1', name: 'bash' },
+        { type: 'tool-call-delta', index: 0, argumentsDelta: '{"command":"echo ok-from-tool"}' },
+        { type: 'done', usage: null, finishReason: 'tool-calls', rawFinishReason: 'tool_calls' },
+      ],
+      textStep('不应到达'),
+    ]);
+    const { lastFrame, stdin, frames } = makeApp(provider);
+    stdin.write('run');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('run');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('需要审批：Bash echo ok-from-tool');
+    });
+    // 弹窗期间其他全局键位仍禁用：Shift+Tab 不切权限模式
+    stdin.write('\x1b[Z');
+    await sleep(80);
+    expect(lastFrame()).not.toContain('⏵ accept edits');
+    // 第一下 Ctrl+C：弹窗按拒绝关闭、turn 中断、进入退出预位
+    stdin.write('\x03');
+    await vi.waitFor(() => {
+      expect(lastFrame()).not.toContain('需要审批：Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('已中断');
+      expect(lastFrame()).toContain('再按一次 Ctrl+C 退出');
+    });
+    await sleep(50);
+    // 第二下 Ctrl+C：退出（unmount 时落最后一帧；此后输入不再产生新帧）
+    const before = frames.length;
+    stdin.write('\x03');
+    await vi.waitFor(() => {
+      expect(frames.length).toBeGreaterThan(before);
+    });
+    const settled = frames.length;
+    stdin.write('x');
+    await sleep(80);
+    expect(frames.length).toBe(settled);
+  });
+
+  it('无弹窗时 Ctrl+C 双击退出（与弹窗路径合并后的统一逻辑回归）', async () => {
+    const { lastFrame, stdin, frames } = makeApp(new FakeProvider([]));
+    stdin.write('\x03');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('再按一次 Ctrl+C 退出');
+    });
+    await sleep(50);
+    const before = frames.length;
+    stdin.write('\x03');
+    await vi.waitFor(() => {
+      expect(frames.length).toBeGreaterThan(before);
+    });
+    const settled = frames.length;
+    stdin.write('x');
+    await sleep(80);
+    expect(frames.length).toBe(settled);
+  });
+});
+
+describe('工具输出落盘展示（#13）', () => {
+  it('输出超 3 行：截断行附完整输出路径，落盘文件内容完整', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'misty-spill-app-test-'));
+    process.env.MISTY_OUTPUT_DIR = dir;
+    try {
+      const longOutput = Array.from({ length: 6 }, (_, i) => `row-${i + 1}`).join('\n');
+      const stub = defineTool({
+        name: 'stub_long_output',
+        description: '返回固定多行输出的测试工具',
+        inputSchema: z.object({}),
+        call: () => Promise.resolve({ output: longOutput }),
+      });
+      const provider = new FakeProvider([
+        toolCallStep([{ name: 'stub_long_output', arguments: '{}' }]),
+        textStep('完成'),
+      ]);
+      const registry = createBuiltinRegistry();
+      registry.register(stub);
+      const session = new Session({
+        provider,
+        model: 'fake-model',
+        systemPrompt: 'system',
+        tools: registry.list(),
+        cwd: process.cwd(),
+        // 自定义工具按写/执行处理（default 模式会弹审批），测试里绕过审批
+        permission: { mode: 'bypassPermissions' },
+      });
+      const { lastFrame, stdin } = render(
+        <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+      );
+      stdin.write('go');
+      await vi.waitFor(() => {
+        expect(lastFrame()).toContain('go');
+      });
+      stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(lastFrame()).toContain('row-1');
+        expect(lastFrame()).toContain('… 还有 3 行，完整输出: ');
+      });
+      // 预览只显示前 3 行，其余进了落盘文件
+      expect(lastFrame()).not.toContain('row-5');
+      const files = readdirSync(dir);
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatch(/-\d+\.log$/);
+      expect(readFileSync(join(dir, files[0]!), 'utf8')).toBe(longOutput);
+      // 截断行里的路径就是落盘文件（路径可能因物理折行断开，比较时剥掉空白）
+      expect(flat(lastFrame()!)).toContain(flat(`完整输出: ${join(dir, files[0]!)}`));
+      await vi.waitFor(() => {
+        expect(lastFrame()).toContain('完成');
+      });
+      // 模型侧仍看到全量输出（事件 output 不变，落盘只是展示层引用）
+      const toolMessage = session.getMessages().find((m) => m.role === 'tool');
+      expect(toolMessage?.role === 'tool' && toolMessage.content).toBe(longOutput);
+    } finally {
+      delete process.env.MISTY_OUTPUT_DIR;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

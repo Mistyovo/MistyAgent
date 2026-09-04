@@ -1,28 +1,29 @@
 import type { ChatProvider } from '#/provider/types';
 
 import type { AskUserFn } from '../../question';
+import { TaskManager } from '../../tasks';
 import { TodoStore } from '../../todos';
 import { ToolRegistry } from '../registry';
 import type { Tool } from '../tool';
 
 import { createAgentTool } from './agent';
 import { createAskUserTool } from './ask-user';
-import { bashTool } from './bash';
+import { createBashTool } from './bash';
 import { editTool } from './edit';
 import { globTool } from './glob';
 import { grepTool } from './grep';
 import { readTool } from './read';
+import { createTaskListTool, createTaskOutputTool, createTaskStopTool } from './tasks';
 import { createTodoTool } from './todo';
 import { webFetchTool } from './web-fetch';
 import { webSearchTool } from './web-search';
 import { writeTool } from './write';
 
-/** 无状态内置工具；todo / agent 依赖宿主状态，由 createBuiltinRegistry 按宿主能力装配 */
+/** 无状态内置工具；bash / todo / agent / task_* 依赖宿主状态，由 createBuiltinRegistry 按宿主能力装配 */
 export const builtinTools: Tool[] = [
   readTool,
   writeTool,
   editTool,
-  bashTool,
   globTool,
   grepTool,
   webFetchTool,
@@ -30,7 +31,7 @@ export const builtinTools: Tool[] = [
 ];
 
 /**
- * 宿主能力：有状态（todo）、依赖 provider（agent）或需要用户交互（ask_user）
+ * 宿主能力：有状态（todo / 后台任务）、依赖 provider（agent）或需要用户交互（ask_user）
  * 的内置工具在 registry 创建时从这里闭包注入。
  */
 export interface BuiltinHost {
@@ -41,6 +42,8 @@ export interface BuiltinHost {
   getModel?: () => string;
   /** 提供后 ask_user 可挂起等用户回答；缺省（无头模式）时工具回喂"自行决策" */
   askUser?: AskUserFn | undefined;
+  /** 后台任务管理器；缺省时 registry 自建（任务事件不进 Session 事件流） */
+  taskManager?: TaskManager;
 }
 
 export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
@@ -48,6 +51,11 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
   for (const tool of builtinTools) {
     registry.register(tool);
   }
+  const taskManager = host?.taskManager ?? new TaskManager();
+  registry.register(createBashTool(taskManager));
+  registry.register(createTaskOutputTool(taskManager));
+  registry.register(createTaskStopTool(taskManager));
+  registry.register(createTaskListTool(taskManager));
   registry.register(createTodoTool(host?.todoStore ?? new TodoStore()));
   registry.register(createAskUserTool(host?.askUser));
   if (host?.provider !== undefined && host.getModel !== undefined) {

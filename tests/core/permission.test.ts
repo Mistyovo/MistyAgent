@@ -12,11 +12,15 @@ import {
 import { nextPermissionMode, permissionModeMeta } from '#/core/permission/modes';
 import { evaluatePermission, type PermissionContext } from '#/core/permission/pipeline';
 import { describeRule, findMatchingRule, matchRule } from '#/core/permission/rules';
-import { bashTool } from '#/core/tools/builtin/bash';
+import { TaskManager } from '#/core/tasks';
+import { createBashTool } from '#/core/tools/builtin/bash';
 import { readTool } from '#/core/tools/builtin/read';
 import { writeTool } from '#/core/tools/builtin/write';
 
 const cwd = process.cwd();
+
+// 权限判定只看工具名/accesses/describeCall，不需要真正的任务管理器
+const bashTool = createBashTool(new TaskManager());
 
 function makeCtx(overrides?: Partial<PermissionContext>): PermissionContext {
   return { mode: 'default', rules: [], sessionApprovals: [], cwd, ...overrides };

@@ -24,6 +24,7 @@ describe('StatusBar 冒烟渲染', () => {
         mode="default"
         usage={{ inputTokens: 1200, outputTokens: 300 }}
         busy={false}
+        runningTasks={0}
         exitArmed={false}
       />,
     );
@@ -32,6 +33,7 @@ describe('StatusBar 冒烟渲染', () => {
     expect(output).toContain('? default');
     expect(output).toContain('↑1.2k');
     expect(output).toContain('↓300');
+    expect(output).not.toContain('⚙');
   });
 
   it('按模式元数据切换显示（plan 模式）', () => {
@@ -42,11 +44,27 @@ describe('StatusBar 冒烟渲染', () => {
         mode="plan"
         usage={null}
         busy={true}
+        runningTasks={0}
         exitArmed={false}
       />,
     );
     expect(output).toContain('⏸ plan mode');
     expect(output).not.toContain('↑');
+  });
+
+  it('有运行中后台任务时显示计数', () => {
+    const output = renderToString(
+      <StatusBar
+        cwd={path.join('mistyapp')}
+        model="m"
+        mode="default"
+        usage={null}
+        busy={false}
+        runningTasks={2}
+        exitArmed={false}
+      />,
+    );
+    expect(output).toContain('⚙ 2');
   });
 });
 

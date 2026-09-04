@@ -16,6 +16,7 @@ import {
   type SessionSummary,
 } from '#/core/session/transcript';
 import { TodoStore } from '#/core/todos';
+import { TaskManager } from '#/core/tasks';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
@@ -180,12 +181,14 @@ async function action(options: CliOptions): Promise<void> {
 
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
+  const taskManager = new TaskManager();
   // agent / ask_user 工具经 sessionRef 闭包取运行期状态（/model 切换、提问挂起）；
   // 这些工具只可能在 turn 进行中运行，此时 sessionRef 必已赋值。
   // print 无头模式不注入提问能力：ask_user 退化为"自行决策"的工具结果
   let sessionRef: Session | null = null;
   const registry = createBuiltinRegistry({
     todoStore,
+    taskManager,
     provider,
     getModel: () => sessionRef?.getModel() ?? loaded.settings.provider.defaultModel,
     askUser:
@@ -205,11 +208,12 @@ async function action(options: CliOptions): Promise<void> {
     provider,
     tools: registry.list(),
     todos: todoStore,
+    tasks: taskManager,
   });
   sessionRef = session;
 
   if (options.print !== undefined) {
-    const code = await runPrintMode({ session, registry, prompt: options.print });
+    const code = await runPrintMode({ session, registry, prompt: options.print, tasks: taskManager });
     await flushStreams();
     exitProcess(code);
     return;

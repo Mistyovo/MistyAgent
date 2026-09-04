@@ -20,6 +20,8 @@ export interface StatusBarProps {
   /** 上一个 turn 的累计用量；null 表示还没有完成的 turn */
   usage: TokenUsage | null;
   busy: boolean;
+  /** 运行中的后台任务数，0 时不显示 */
+  runningTasks: number;
   /** 第一次 Ctrl+C 后 3 秒内为 true，提示再按一次退出 */
   exitArmed: boolean;
 }
@@ -33,7 +35,7 @@ export function formatTokenCount(count: number): string {
  *  老式 conhost 里按 2 格渲染，满宽边框行会物理换行、与 ink 的行高预算错位，
  *  eraseLines 逐帧少擦导致残帧/空白累积。整行物理宽度按 列数-2 预算
  *  （-1 满宽保险、-1 paddingX 左格），余量不够时从 basename 截断。 */
-export function StatusBar({ cwd, model, mode, usage, busy, exitArmed }: StatusBarProps) {
+export function StatusBar({ cwd, model, mode, usage, busy, runningTasks, exitArmed }: StatusBarProps) {
   const meta = permissionModeMeta[mode];
   const basename = path.basename(cwd) || cwd;
   const widthMode = getTerminalWidthMode();
@@ -41,6 +43,7 @@ export function StatusBar({ cwd, model, mode, usage, busy, exitArmed }: StatusBa
   const tail =
     `  ${model}  ${meta.symbol} ${meta.label}` +
     (busy ? '  …' : '') +
+    (runningTasks > 0 ? `  ⚙ ${runningTasks}` : '') +
     (usage === null
       ? ''
       : `  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`) +
@@ -53,6 +56,7 @@ export function StatusBar({ cwd, model, mode, usage, busy, exitArmed }: StatusBa
       <Text dimColor>{`  ${model}  `}</Text>
       <Text color={meta.color}>{`${meta.symbol} ${meta.label}`}</Text>
       {busy && <Text dimColor>{'  …'}</Text>}
+      {runningTasks > 0 && <Text dimColor>{`  ⚙ ${runningTasks}`}</Text>}
       {usage !== null && (
         <Text dimColor>{`  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`}</Text>
       )}

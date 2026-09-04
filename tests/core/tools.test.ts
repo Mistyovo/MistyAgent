@@ -4,23 +4,26 @@ import path from 'node:path';
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { bashTool } from '#/core/tools/builtin/bash';
+import { TaskManager } from '#/core/tasks';
+import { createBashTool } from '#/core/tools/builtin/bash';
 import { editTool } from '#/core/tools/builtin/edit';
 import { globTool } from '#/core/tools/builtin/glob';
 import { grepTool } from '#/core/tools/builtin/grep';
 import { createBuiltinRegistry } from '#/core/tools/builtin/index';
 import { readTool } from '#/core/tools/builtin/read';
 import { writeTool } from '#/core/tools/builtin/write';
-import type { ToolContext } from '#/core/tools/tool';
+import type { Tool, ToolContext } from '#/core/tools/tool';
 
 import { FakeProvider } from './fake-provider';
 
 let cwd: string;
 let ctx: ToolContext;
+let bashTool: Tool;
 
 beforeEach(async () => {
   cwd = await mkdtemp(path.join(tmpdir(), 'misty-tools-'));
   ctx = { cwd, signal: new AbortController().signal };
+  bashTool = createBashTool(new TaskManager());
 });
 
 describe('read', () => {
@@ -167,6 +170,9 @@ describe('registry', () => {
       'glob',
       'grep',
       'read',
+      'task_list',
+      'task_output',
+      'task_stop',
       'todo',
       'web_fetch',
       'web_search',

@@ -81,6 +81,8 @@ export interface SessionUiState {
   lastUsage: TokenUsage | null;
   /** 会话级任务列表（todo 工具全量替换），状态栏上方渲染 */
   todos: TodoItem[];
+  /** 运行中的后台任务数（task-started / task-finished 事件携带的运行计数） */
+  runningTasks: number;
   nextId: number;
 }
 
@@ -98,6 +100,7 @@ export function initialSessionUiState(): SessionUiState {
     queuedCount: 0,
     lastUsage: null,
     todos: [],
+    runningTasks: 0,
     nextId: 1,
   };
 }
@@ -272,5 +275,22 @@ export function reduceEvent(
       });
     case 'todos-updated':
       return { ...state, todos: event.todos };
+    case 'task-started':
+      // 启动本身不上屏（bash 工具块已展示），只刷新状态栏计数
+      return { ...state, runningTasks: event.runningCount };
+    case 'task-finished': {
+      const command =
+        event.command.length > 60 ? `${event.command.slice(0, 60)}…` : event.command;
+      const text =
+        event.status === 'completed'
+          ? `task ${event.taskId} 已完成 (exit ${event.exitCode ?? 0}): ${command}`
+          : event.status === 'failed'
+            ? `task ${event.taskId} 失败 (exit ${event.exitCode ?? '信号终止'}): ${command}`
+            : `task ${event.taskId} 已停止: ${command}`;
+      return {
+        ...pushBlock(state, { kind: 'notice', text }),
+        runningTasks: event.runningCount,
+      };
+    }
   }
 }

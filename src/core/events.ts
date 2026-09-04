@@ -94,6 +94,26 @@ export interface TodosUpdatedEvent {
   todos: TodoItem[];
 }
 
+/** 后台任务启动后发出（bash run_in_background）；runningCount 为启动后的运行中任务数 */
+export interface TaskStartedEvent {
+  type: 'task-started';
+  taskId: string;
+  command: string;
+  pid: number | undefined;
+  runningCount: number;
+}
+
+/** 后台任务落定（completed/failed/killed）后发出；outputTail 为输出尾部摘要（≤2000 字符） */
+export interface TaskFinishedEvent {
+  type: 'task-finished';
+  taskId: string;
+  command: string;
+  status: 'completed' | 'failed' | 'killed';
+  exitCode: number | null;
+  outputTail: string;
+  runningCount: number;
+}
+
 export type AgentEvent =
   | TurnStartedEvent
   | TurnCompleteEvent
@@ -107,7 +127,9 @@ export type AgentEvent =
   | ApprovalRequestedEvent
   | QuestionAskedEvent
   | CompactedEvent
-  | TodosUpdatedEvent;
+  | TodosUpdatedEvent
+  | TaskStartedEvent
+  | TaskFinishedEvent;
 
 export type EventListener = (event: AgentEvent) => void;
 export type EventDispatcher = (event: AgentEvent) => void;

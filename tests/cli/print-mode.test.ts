@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { runPrintMode } from '#/cli/print-mode';
 import { Session } from '#/core/session/session';
+import { TaskManager } from '#/core/tasks';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { ToolRegistry } from '#/core/tools/registry';
 import { defineTool } from '#/core/tools/tool';
@@ -123,4 +124,98 @@ describe('runPrintMode', () => {
     expect(code).toBe(1);
     expect(stderr).toContain('✗ boom');
   });
+});
+
+describe('runPrintMode 后台任务 drain', () => {
+  it('turn 结束后仍有 running 任务：至多等 3s 后终止，防进程挂住', async () => {
+    const tasks = new TaskManager();
+    const registry = createBuiltinRegistry({ taskManager: tasks });
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'bash',
+          arguments: JSON.stringify({
+            command: 'node -e "setInterval(()=>{}, 30000)"',
+            run_in_background: true,
+          }),
+        },
+      ]),
+      textStep('已后台启动'),
+    ]);
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      permission: { mode: 'bypassPermissions' },
+      tasks,
+    });
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const start = Date.now();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      tasks,
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout.text()).toBe('已后台启动\n');
+    // drain 等待约 3s 后终止任务（不是无限挂起，也不是立即杀死）
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeGreaterThanOrEqual(2900);
+    expect(elapsed).toBeLessThan(8000);
+    expect(stderr.text()).toContain('还有 1 个后台任务在运行');
+    expect(stderr.text()).toContain('未在等待期内结束，已终止');
+    expect(tasks.list()[0]?.status).toBe('killed');
+  }, 15000);
+
+  it('后台任务在 turn 内结束：task-finished 写 stderr，drain 不再等待', async () => {
+    const tasks = new TaskManager();
+    const registry = createBuiltinRegistry({ taskManager: tasks });
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'bash',
+          arguments: JSON.stringify({ command: 'echo print-bg', run_in_background: true }),
+        },
+      ]),
+      // 阻塞等 echo 落定，保证 turn 结束时任务已完成（消除与 drain 的竞态）
+      toolCallStep([
+        {
+          name: 'task_output',
+          arguments: JSON.stringify({ taskId: 'task_1', block: true, timeoutMs: 5000 }),
+        },
+      ]),
+      textStep('收尾'),
+    ]);
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      permission: { mode: 'bypassPermissions' },
+      tasks,
+    });
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      tasks,
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(code).toBe(0);
+    // echo 在 drain 前已完成：没有"等待/终止"提示
+    expect(stderr.text()).not.toContain('后台任务在运行');
+    expect(stderr.text()).toMatch(/⚙ task_1 已完成（exit 0）/);
+  }, 15000);
 });

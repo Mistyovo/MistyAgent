@@ -146,6 +146,7 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
         mode={mode}
         usage={state.lastUsage}
         busy={busy}
+        runningTasks={state.runningTasks}
         exitArmed={exitArmed}
       />
     </Box>

@@ -284,3 +284,70 @@ describe('todos-updated', () => {
     expect(state.todos).toEqual([]);
   });
 });
+
+describe('后台任务事件', () => {
+  it('task-started 只刷新 runningTasks 计数，不上屏', () => {
+    const state = run(initialSessionUiState(), {
+      type: 'task-started',
+      taskId: 'task_1',
+      command: 'npm run build',
+      pid: 1234,
+      runningCount: 1,
+    });
+    expect(state.runningTasks).toBe(1);
+    expect(state.blocks).toHaveLength(0);
+  });
+
+  it('task-finished 落暗色 notice，命令超长截断，runningTasks 同步', () => {
+    const longCommand = `node build.js ${'--flag '.repeat(20)}`;
+    let state = run(initialSessionUiState(), {
+      type: 'task-started',
+      taskId: 'task_1',
+      command: longCommand,
+      pid: 1234,
+      runningCount: 1,
+    });
+    state = run(state, {
+      type: 'task-finished',
+      taskId: 'task_1',
+      command: longCommand,
+      status: 'completed',
+      exitCode: 0,
+      outputTail: 'done',
+      runningCount: 0,
+    });
+    expect(state.runningTasks).toBe(0);
+    expect(state.blocks).toHaveLength(1);
+    const block = state.blocks[0]!;
+    expect(block.kind).toBe('notice');
+    if (block.kind === 'notice') {
+      expect(block.text.startsWith('task task_1 已完成 (exit 0): node build.js')).toBe(true);
+      expect(block.text).toContain('…');
+      expect(block.text.length).toBeLessThan(longCommand.length);
+    }
+  });
+
+  it('failed / killed 的 notice 文案区分状态', () => {
+    const base = { taskId: 'task_2', command: 'make test', outputTail: '', runningCount: 0 };
+    const failed = run(initialSessionUiState(), {
+      ...base,
+      type: 'task-finished',
+      status: 'failed',
+      exitCode: 1,
+    });
+    expect(failed.blocks[0]).toMatchObject({
+      kind: 'notice',
+      text: 'task task_2 失败 (exit 1): make test',
+    });
+    const killed = run(initialSessionUiState(), {
+      ...base,
+      type: 'task-finished',
+      status: 'killed',
+      exitCode: null,
+    });
+    expect(killed.blocks[0]).toMatchObject({
+      kind: 'notice',
+      text: 'task task_2 已停止: make test',
+    });
+  });
+});

@@ -17,6 +17,7 @@ import type { ApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
 import type { PermissionRuntime } from '../permission/pipeline';
 import { QuestionManager, type QuestionReply, type QuestionRequest } from '../question';
+import type { TaskManager } from '../tasks';
 import type { TodoStore } from '../todos';
 import type { Tool } from '../tools/tool';
 
@@ -48,6 +49,11 @@ export interface SessionConfig {
   maxContextTokens?: number | undefined;
   /** 会话级 todo 存储（todo 工具全量替换它）；变更被转发为 todos-updated 事件 */
   todos?: TodoStore | undefined;
+  /**
+   * 后台任务管理器（bash run_in_background 与 task_* 工具共享同一个实例）；
+   * 任务启动/落定被转发为 task-started / task-finished 事件
+   */
+  tasks?: TaskManager | undefined;
 }
 
 interface QueuedTurn {
@@ -96,6 +102,28 @@ export class Session {
       this.todos = config.todos;
       this.todos.onChange((todos) => {
         this.dispatch({ type: 'todos-updated', todos });
+      });
+    }
+    if (config.tasks !== undefined) {
+      config.tasks.onStarted((task, runningCount) => {
+        this.dispatch({
+          type: 'task-started',
+          taskId: task.id,
+          command: task.command,
+          pid: task.pid,
+          runningCount,
+        });
+      });
+      config.tasks.onFinished((task, outputTail, runningCount) => {
+        this.dispatch({
+          type: 'task-finished',
+          taskId: task.id,
+          command: task.command,
+          status: task.status as 'completed' | 'failed' | 'killed',
+          exitCode: task.exitCode ?? null,
+          outputTail,
+          runningCount,
+        });
       });
     }
     this.approvals = new ApprovalManager(config.cwd);

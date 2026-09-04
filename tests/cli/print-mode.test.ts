@@ -124,6 +124,53 @@ describe('runPrintMode', () => {
     expect(code).toBe(1);
     expect(stderr).toContain('✗ boom');
   });
+
+  it('无头模式计划批准：plan-approval-requested 自动拒绝并回喂说明', async () => {
+    // 与 main.ts 相同的接线：plan 工具经 sessionRef 闭包拿 Session 的计划模式能力
+    let sessionRef: Session | null = null;
+    const registry = createBuiltinRegistry({
+      planMode: {
+        isPlanMode: () => sessionRef?.isPlanMode() ?? false,
+        enterPlanMode: () => sessionRef?.enterPlanMode() ?? false,
+        exitPlanMode: (target) => sessionRef?.exitPlanMode(target) ?? false,
+        requestPlanApproval: (request, signal) =>
+          sessionRef?.requestPlanApproval(request, signal) ??
+          Promise.resolve({ approved: false, feedback: '会话尚未就绪' }),
+      },
+    });
+    const provider = new FakeProvider([
+      toolCallStep([{ name: 'exit_plan_mode', arguments: JSON.stringify({ plan: '# 计划' }) }]),
+      textStep('以文本输出计划'),
+    ]);
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+      permission: { mode: 'plan' },
+    });
+    sessionRef = session;
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout.text()).toBe('以文本输出计划\n');
+    expect(stderr.text()).toContain('无头模式无法交互批准计划');
+    const toolMessage = session.getMessages().find((m) => m.role === 'tool');
+    expect(toolMessage).toMatchObject({ name: 'exit_plan_mode', isError: true });
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('计划被拒绝');
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('无头');
+    // 自动拒绝不退出计划模式
+    expect(session.isPlanMode()).toBe(true);
+  });
 });
 
 describe('runPrintMode 后台任务 drain', () => {

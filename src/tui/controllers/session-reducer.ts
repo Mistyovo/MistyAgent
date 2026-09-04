@@ -1,5 +1,6 @@
 import type { AgentEvent } from '#/core/events';
 import type { ApprovalRequest } from '#/core/permission/approval';
+import type { PlanApprovalRequest } from '#/core/plan-mode';
 import type { QuestionRequest } from '#/core/question';
 import type { TodoItem } from '#/core/todos';
 import type { TokenUsage } from '#/provider/types';
@@ -65,10 +66,11 @@ export interface StreamingState {
   text: string;
 }
 
-/** 待用户决断的弹窗：审批或提问。一次只显示队首，先到的先显示 */
+/** 待用户决断的弹窗：审批、提问或计划批准。一次只显示队首，先到的先显示 */
 export type PendingDialog =
   | { kind: 'approval'; request: ApprovalRequest }
-  | { kind: 'question'; request: QuestionRequest };
+  | { kind: 'question'; request: QuestionRequest }
+  | { kind: 'plan-approval'; request: PlanApprovalRequest };
 
 export interface SessionUiState {
   blocks: UiBlock[];
@@ -266,6 +268,15 @@ export function reduceEvent(
         ...state,
         pendingDialogs: [...state.pendingDialogs, { kind: 'question', request: event.request }],
       };
+    case 'plan-approval-requested':
+      return {
+        ...state,
+        pendingDialogs: [...state.pendingDialogs, { kind: 'plan-approval', request: event.request }],
+      };
+    case 'plan-mode-changed':
+      // 状态栏的权限模式显示由 App 订阅该事件同步；进/出计划模式的上下文
+      // 已由 enter/exit 工具块展示，blocks 无需额外提示
+      return state;
     case 'compacted':
       return pushBlock(state, {
         kind: 'notice',

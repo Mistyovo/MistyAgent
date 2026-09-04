@@ -8,6 +8,7 @@ import {
   type SettingsOverrides,
 } from '#/config/settings';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
+import type { PlanModeHost } from '#/core/plan-mode';
 import { Session, type SessionConfig } from '#/core/session/session';
 import {
   listSessions,
@@ -182,10 +183,19 @@ async function action(options: CliOptions): Promise<void> {
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
   const taskManager = new TaskManager();
-  // agent / ask_user 工具经 sessionRef 闭包取运行期状态（/model 切换、提问挂起）；
-  // 这些工具只可能在 turn 进行中运行，此时 sessionRef 必已赋值。
-  // print 无头模式不注入提问能力：ask_user 退化为"自行决策"的工具结果
+  // agent / ask_user / plan 工具经 sessionRef 闭包取运行期状态（/model 切换、提问挂起、
+  // 计划模式状态与计划审批）；这些工具只可能在 turn 进行中运行，此时 sessionRef 必已赋值。
+  // print 无头模式不注入提问能力：ask_user 退化为"自行决策"的工具结果；
+  // 计划审批在 print 模式始终可用，由 runPrintMode 监听事件后自动拒绝（回喂说明）
   let sessionRef: Session | null = null;
+  const planModeHost: PlanModeHost = {
+    isPlanMode: () => sessionRef?.isPlanMode() ?? false,
+    enterPlanMode: () => sessionRef?.enterPlanMode() ?? false,
+    exitPlanMode: (target) => sessionRef?.exitPlanMode(target) ?? false,
+    requestPlanApproval: (request, signal) =>
+      sessionRef?.requestPlanApproval(request, signal) ??
+      Promise.resolve({ approved: false, feedback: '会话尚未就绪，无法提交计划审批' }),
+  };
   const registry = createBuiltinRegistry({
     todoStore,
     taskManager,
@@ -196,6 +206,7 @@ async function action(options: CliOptions): Promise<void> {
         ? (request, signal) =>
             sessionRef?.askUser(request, signal) ?? Promise.resolve({ cancelled: true })
         : undefined,
+    planMode: planModeHost,
   });
   const sessionConfig = buildSessionConfig(loaded.settings, cwd);
   if (resumed !== null) {

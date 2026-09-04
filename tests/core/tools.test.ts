@@ -167,6 +167,8 @@ describe('registry', () => {
       'ask_user',
       'bash',
       'edit',
+      'enter_plan_mode',
+      'exit_plan_mode',
       'glob',
       'grep',
       'read',

@@ -10,6 +10,7 @@ import type { ToolRegistry } from '#/core/tools/registry';
 import { isSlashCommand, runSlashCommand, type CommandContext } from './commands';
 import { ApprovalDialog } from './components/ApprovalDialog';
 import { MessageList } from './components/MessageList';
+import { PlanApprovalDialog } from './components/PlanApprovalDialog';
 import { PromptInput } from './components/PromptInput';
 import { QuestionDialog } from './components/QuestionDialog';
 import { StatusBar } from './components/StatusBar';
@@ -28,15 +29,16 @@ const EXIT_ARM_MS = 3000;
 
 /**
  * 全局键位：
- * - Esc：中断进行中的 turn（弹窗打开时由弹窗处理：审批=拒绝，提问=跳过）
- * - Shift+Tab：循环切换权限模式（Windows 终端到达为 \x1b[Z，ink 解析为 tab+shift）
+ * - Esc：中断进行中的 turn（弹窗打开时由弹窗处理：审批=拒绝，提问=跳过，计划批准=拒绝）
+ * - Shift+Tab：循环切换权限模式（Windows 终端到达为 \x1b[Z，ink 解析为 tab+shift）；
+ *   切到 plan 即进入完整计划模式，计划模式中切走即退出（Session.setPermissionMode 内聚）
  * - Ctrl+C：第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出
  *
  * 输入路由：/ 开头走斜杠命令框架（不进 session.submit），其余按 user-turn 提交。
  */
 export function App({ session, registry, model: initialModel, cwd }: AppProps) {
   const { exit } = useApp();
-  const { state, submit, replyApproval, replyQuestion, notice, clearBlocks } =
+  const { state, submit, replyApproval, replyQuestion, replyPlanApproval, notice, clearBlocks } =
     useSessionController(session, registry);
   const [model, setModel] = useState(initialModel);
   const [mode, setMode] = useState<PermissionMode>(() => session.getPermissionMode());
@@ -45,6 +47,17 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
 
   const busy = state.streaming.active;
   const dialog = state.pendingDialogs[0] ?? null;
+
+  // 计划模式进/退可由模型工具在 turn 内触发（权限模式随之切换），状态栏经事件同步
+  useEffect(
+    () =>
+      session.onEvent((event) => {
+        if (event.type === 'plan-mode-changed') {
+          setMode(event.mode);
+        }
+      }),
+    [session],
+  );
 
   useEffect(
     () => () => {
@@ -130,6 +143,14 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
           request={dialog.request}
           onReply={(reply) => {
             replyQuestion(dialog.request.id, reply);
+          }}
+        />
+      )}
+      {dialog?.kind === 'plan-approval' && (
+        <PlanApprovalDialog
+          request={dialog.request}
+          onReply={(reply) => {
+            replyPlanApproval(dialog.request.id, reply);
           }}
         />
       )}

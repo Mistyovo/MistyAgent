@@ -191,6 +191,7 @@ describe('弹窗队列', () => {
     question: '选哪个？',
     options: [{ label: '甲' }, { label: '乙' }],
   };
+  const planApproval = { id: 'p1', plan: '# 计划\n1. 第一步' };
 
   it('approval-requested 挂起，reduceDialogReplied 出队', () => {
     let state = run(
@@ -214,6 +215,17 @@ describe('弹窗队列', () => {
     expect(state.pendingDialogs).toEqual([]);
   });
 
+  it('plan-approval-requested 挂起，reduceDialogReplied 出队', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'plan-approval-requested', request: planApproval },
+    );
+    expect(state.pendingDialogs).toEqual([{ kind: 'plan-approval', request: planApproval }]);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs).toEqual([]);
+  });
+
   it('审批与提问同时挂起：一次只显示队首，先到的先显示', () => {
     let state = run(
       initialSessionUiState(),
@@ -226,15 +238,50 @@ describe('弹窗队列', () => {
     expect(state.pendingDialogs.map((d) => d.kind)).toEqual(['approval']);
   });
 
-  it('interrupted 清空弹窗队列', () => {
+  it('审批、提问、计划批准三类型共存：FIFO 依次露出', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'plan-approval-requested', request: planApproval },
+      { type: 'approval-requested', request: approval },
+      { type: 'question-asked', request: question },
+    );
+    expect(state.pendingDialogs.map((d) => d.kind)).toEqual([
+      'plan-approval',
+      'approval',
+      'question',
+    ]);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs.map((d) => d.kind)).toEqual(['approval', 'question']);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs.map((d) => d.kind)).toEqual(['question']);
+  });
+
+  it('interrupted 清空弹窗队列（含计划批准）', () => {
     const state = run(
       initialSessionUiState(),
       { type: 'turn-started' },
       { type: 'question-asked', request: question },
+      { type: 'plan-approval-requested', request: planApproval },
       { type: 'approval-requested', request: approval },
       { type: 'interrupted', reason: 'user' },
     );
     expect(state.pendingDialogs).toEqual([]);
+  });
+
+  it('plan-mode-changed 不影响 blocks / 弹窗队列 / streaming', () => {
+    const before = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'plan-approval-requested', request: planApproval },
+    );
+    const after = run(before, {
+      type: 'plan-mode-changed',
+      active: true,
+      mode: 'plan',
+      previousMode: 'default',
+    });
+    expect(after).toBe(before);
   });
 });
 

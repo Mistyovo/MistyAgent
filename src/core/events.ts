@@ -1,6 +1,8 @@
+import type { PermissionMode } from '#/config/schema';
 import type { FinishReason, TokenUsage } from '#/provider/types';
 
 import type { ApprovalRequest } from './permission/approval';
+import type { PlanApprovalRequest } from './plan-mode';
 import type { QuestionRequest } from './question';
 import type { TodoItem } from './todos';
 
@@ -77,6 +79,24 @@ export interface QuestionAskedEvent {
   request: QuestionRequest;
 }
 
+/** exit_plan_mode 工具挂起等用户批准计划时发出；UI 弹窗后以 plan-approval-reply Op 回复 */
+export interface PlanApprovalRequestedEvent {
+  type: 'plan-approval-requested';
+  request: PlanApprovalRequest;
+}
+
+/**
+ * 进入/退出计划模式时发出（enter_plan_mode / exit_plan_mode 工具、shift+tab、/mode、启动 flag）。
+ * mode 为切换后的权限模式：进入恒为 plan；退出为 previousMode（工具批准路径）或用户显式选择的模式。
+ */
+export interface PlanModeChangedEvent {
+  type: 'plan-mode-changed';
+  active: boolean;
+  mode: PermissionMode;
+  /** 进入计划模式前的权限模式（退出后恢复的目标） */
+  previousMode?: PermissionMode | undefined;
+}
+
 /** 上下文压缩完成（自动或 /compact 手动触发）后发出 */
 export interface CompactedEvent {
   type: 'compacted';
@@ -126,6 +146,8 @@ export type AgentEvent =
   | InterruptedEvent
   | ApprovalRequestedEvent
   | QuestionAskedEvent
+  | PlanApprovalRequestedEvent
+  | PlanModeChangedEvent
   | CompactedEvent
   | TodosUpdatedEvent
   | TaskStartedEvent

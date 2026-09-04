@@ -1,9 +1,11 @@
 import type { ApprovalReply } from './permission/approval';
+import type { PlanApprovalReply } from './plan-mode';
 import type { QuestionReply } from './question';
 
 /**
  * 外部世界发给 agent 的指令。Session 入口按 union 分发：
- * user-turn 走 turn 队列，approval-reply / question-reply 直接转发对应 Manager。
+ * user-turn 走 turn 队列，approval-reply / question-reply / plan-approval-reply
+ * 直接转发对应 Manager。
  */
 export interface UserTurnOp {
   type: 'user-turn';
@@ -28,4 +30,11 @@ export interface QuestionReplyOp {
   reply: QuestionReply;
 }
 
-export type Op = UserTurnOp | InterruptOp | ApprovalReplyOp | QuestionReplyOp;
+export interface PlanApprovalReplyOp {
+  type: 'plan-approval-reply';
+  /** 对应 PlanApprovalRequest.id */
+  id: string;
+  reply: PlanApprovalReply;
+}
+
+export type Op = UserTurnOp | InterruptOp | ApprovalReplyOp | QuestionReplyOp | PlanApprovalReplyOp;

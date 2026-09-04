@@ -15,6 +15,8 @@ export interface RunTurnDeps {
   /** 每步从该函数读模型（/model 运行时切换），缺省用 model 字段 */
   getModel?: () => string;
   systemPrompt: string;
+  /** 每步从该函数读 system prompt（plan 模式指引可在一个 turn 内被工具切换），缺省用 systemPrompt 字段 */
+  getSystemPrompt?: () => string;
   /** 可变历史，loop 直接 append（assistant / tool / 提示消息） */
   messages: Message[];
   /** 历史新增消息时的回调（Session 用于 transcript 落盘） */
@@ -154,7 +156,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
     const outcome = await executeStep({
       provider: deps.provider,
       model: deps.getModel?.() ?? deps.model,
-      systemPrompt: deps.systemPrompt,
+      systemPrompt: deps.getSystemPrompt?.() ?? deps.systemPrompt,
       messages: deps.messages,
       tools: finalStepForced ? [] : definitions,
       step: steps,

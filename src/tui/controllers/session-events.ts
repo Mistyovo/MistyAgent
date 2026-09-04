@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApprovalReply } from '#/core/permission/approval';
+import type { PlanApprovalReply } from '#/core/plan-mode';
 import type { QuestionReply } from '#/core/question';
 import type { Session } from '#/core/session/session';
 import type { ToolRegistry } from '#/core/tools/registry';
@@ -26,6 +27,7 @@ export interface SessionController {
   submit(text: string): void;
   replyApproval(id: string, reply: ApprovalReply): void;
   replyQuestion(id: string, reply: QuestionReply): void;
+  replyPlanApproval(id: string, reply: PlanApprovalReply): void;
   /** 本地提示上屏（斜杠命令输出等） */
   notice(text: string): void;
   /** /clear：清空 Static 区 */
@@ -107,6 +109,14 @@ export function useSessionController(session: Session, registry: ToolRegistry): 
     [session],
   );
 
+  const replyPlanApproval = useCallback(
+    (id: string, reply: PlanApprovalReply) => {
+      setState((s) => reduceDialogReplied(s));
+      session.submit({ type: 'plan-approval-reply', id, reply });
+    },
+    [session],
+  );
+
   const notice = useCallback((text: string) => {
     setState((s) => reduceNotice(s, text));
   }, []);
@@ -115,5 +125,5 @@ export function useSessionController(session: Session, registry: ToolRegistry): 
     setState((s) => reduceClearBlocks(s));
   }, []);
 
-  return { state, submit, replyApproval, replyQuestion, notice, clearBlocks };
+  return { state, submit, replyApproval, replyQuestion, replyPlanApproval, notice, clearBlocks };
 }

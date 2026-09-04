@@ -18,7 +18,7 @@ const TASK_DRAIN_MS = 3000;
 
 /**
  * 无头模式（-p/--print）：跑一个 turn，assistant 文本流式写 stdout，
- * 工具调用摘要与错误写 stderr。审批请求无法交互，自动拒绝并回喂说明。
+ * 工具调用摘要与错误写 stderr。审批与计划批准请求无法交互，自动拒绝并回喂说明。
  * 退出码：completed → 0；interrupted → 130；error / max-steps → 1。
  */
 export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
@@ -59,6 +59,19 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
           reply: {
             decision: 'reject',
             feedback: '当前是无头（-p/--print）模式，无法交互审批；如需放行请配置 permissionRules 或调整 --mode。',
+          },
+        });
+        break;
+      case 'plan-approval-requested':
+        stderr.write('✗ 无头模式无法交互批准计划，已自动拒绝\n');
+        deps.session.submit({
+          type: 'plan-approval-reply',
+          id: event.request.id,
+          reply: {
+            approved: false,
+            feedback:
+              '当前是无头（-p/--print）模式，无法交互批准计划；' +
+              '请以文本形式输出计划，或去掉 --mode plan 在 TUI 中运行。',
           },
         });
         break;

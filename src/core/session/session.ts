@@ -13,9 +13,15 @@ import {
 import { errorMessage } from '../errors';
 import type { AgentEvent, EventListener, TurnStopReason } from '../events';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
-import type { ApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
+import type { ApprovalReplyOp, PlanApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
 import type { PermissionRuntime } from '../permission/pipeline';
+import {
+  PlanApprovalManager,
+  buildPlanModePrompt,
+  type PlanApprovalReply,
+  type PlanApprovalRequest,
+} from '../plan-mode';
 import { QuestionManager, type QuestionReply, type QuestionRequest } from '../question';
 import type { TaskManager } from '../tasks';
 import type { TodoStore } from '../todos';
@@ -80,9 +86,16 @@ export class Session {
   private readonly queue: QueuedTurn[] = [];
   private readonly approvals: ApprovalManager;
   private readonly questions = new QuestionManager();
+  private readonly planApprovals = new PlanApprovalManager();
   private readonly permission: PermissionRuntime;
   private permissionMode: PermissionMode;
   private readonly permissionRules: readonly PermissionRule[];
+  /**
+   * 计划模式状态：planMode=true 时权限模式恒为 plan（不变式），
+   * previousMode 记录进入前的模式供退出时恢复（--mode plan 启动时记 default）
+   */
+  private planMode: boolean;
+  private previousMode: PermissionMode;
   private activeController: AbortController | null = null;
   private model: string;
   private readonly maxContextTokens: number;
@@ -93,6 +106,9 @@ export class Session {
     this.config = config;
     this.permissionMode = config.permission?.mode ?? 'default';
     this.permissionRules = config.permission?.rules ?? [];
+    // 启动即 plan 模式（--mode plan / 配置）：等价于完整计划模式，来路记为 default
+    this.planMode = this.permissionMode === 'plan';
+    this.previousMode = 'default';
     this.model = config.model;
     this.maxContextTokens = config.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
     if (config.initialMessages !== undefined) {
@@ -129,6 +145,9 @@ export class Session {
     this.approvals = new ApprovalManager(config.cwd);
     this.questions.onAsked((request) => {
       this.dispatch({ type: 'question-asked', request });
+    });
+    this.planApprovals.onRequested((request) => {
+      this.dispatch({ type: 'plan-approval-requested', request });
     });
     this.permission = {
       getContext: () => ({
@@ -209,9 +228,58 @@ export class Session {
     return this.permissionMode;
   }
 
-  /** 运行时切换权限模式（TUI shift+tab），对后续判定立即生效 */
+  /**
+   * 运行时切换权限模式（TUI shift+tab / /mode），对后续判定立即生效。
+   * 切到 plan 等价于进入完整计划模式（含 prompt 指引）；计划模式中切走
+   * 等价于退出——以用户显式选择为准，不恢复 previousMode。
+   */
   setPermissionMode(mode: PermissionMode): void {
+    if (mode === 'plan') {
+      this.enterPlanMode();
+      return;
+    }
+    if (this.planMode) {
+      this.exitPlanMode(mode);
+      return;
+    }
     this.permissionMode = mode;
+  }
+
+  isPlanMode(): boolean {
+    return this.planMode;
+  }
+
+  /** 进入计划模式：权限切到 plan 并记住来路；已激活时幂等返回 false */
+  enterPlanMode(): boolean {
+    if (this.planMode) {
+      return false;
+    }
+    this.previousMode = this.permissionMode;
+    this.planMode = true;
+    this.permissionMode = 'plan';
+    this.dispatch({
+      type: 'plan-mode-changed',
+      active: true,
+      mode: 'plan',
+      previousMode: this.previousMode,
+    });
+    return true;
+  }
+
+  /** 退出计划模式：target 缺省切回进入前的模式（exit_plan_mode 批准路径） */
+  exitPlanMode(target?: PermissionMode): boolean {
+    if (!this.planMode) {
+      return false;
+    }
+    this.planMode = false;
+    this.permissionMode = target ?? this.previousMode;
+    this.dispatch({
+      type: 'plan-mode-changed',
+      active: false,
+      mode: this.permissionMode,
+      previousMode: this.previousMode,
+    });
+    return true;
   }
 
   /** /clear：清历史并开始新会话（启用持久化时开新 transcript 文件） */
@@ -249,12 +317,19 @@ export class Session {
   submit(op: ApprovalReplyOp): boolean;
   /** question-reply：转发给 QuestionManager；返回 false 表示没有该 id 的挂起提问 */
   submit(op: QuestionReplyOp): boolean;
-  submit(op: UserTurnOp | ApprovalReplyOp | QuestionReplyOp): Promise<RunTurnResult> | boolean {
+  /** plan-approval-reply：转发给 PlanApprovalManager；返回 false 表示没有该 id 的挂起审批 */
+  submit(op: PlanApprovalReplyOp): boolean;
+  submit(
+    op: UserTurnOp | ApprovalReplyOp | QuestionReplyOp | PlanApprovalReplyOp,
+  ): Promise<RunTurnResult> | boolean {
     if (op.type === 'approval-reply') {
       return this.approvals.reply(op.id, op.reply);
     }
     if (op.type === 'question-reply') {
       return this.questions.reply(op.id, op.reply);
+    }
+    if (op.type === 'plan-approval-reply') {
+      return this.planApprovals.reply(op.id, op.reply);
     }
     return new Promise((resolve) => {
       this.queue.push({ op, resolve });
@@ -267,10 +342,16 @@ export class Session {
     return this.questions.ask(request, signal);
   }
 
+  /** exit_plan_mode 工具的宿主入口：挂起等 plan-approval-reply Op；interrupt / signal abort 落定拒绝 */
+  requestPlanApproval(request: PlanApprovalRequest, signal?: AbortSignal): Promise<PlanApprovalReply> {
+    return this.planApprovals.request(request, signal);
+  }
+
   interrupt(): void {
     this.activeController?.abort();
     this.approvals.rejectAll('interrupted by user');
     this.questions.cancelAll();
+    this.planApprovals.cancelAll();
   }
 
   private dispatch(event: AgentEvent): void {
@@ -323,6 +404,11 @@ export class Session {
       model: this.model,
       getModel: () => this.model,
       systemPrompt: this.config.systemPrompt,
+      // 计划模式可在一个 turn 内被工具切换：每步现读，激活时追加 plan 指引段
+      getSystemPrompt: () =>
+        this.planMode
+          ? `${this.config.systemPrompt}\n\n${buildPlanModePrompt()}`
+          : this.config.systemPrompt,
       messages: this.messages,
       onMessageAppended: (message) => {
         this.persist(message);

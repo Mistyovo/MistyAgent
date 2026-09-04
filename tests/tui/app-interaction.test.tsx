@@ -46,6 +46,35 @@ function makeInteractiveApp(provider: ChatProvider) {
   };
 }
 
+/** 与 main.ts 相同的接线：plan 工具经 sessionRef 闭包拿到 Session 的计划模式能力 */
+function makePlanApp(provider: ChatProvider) {
+  let sessionRef: Session | null = null;
+  const registry = createBuiltinRegistry({
+    planMode: {
+      isPlanMode: () => sessionRef?.isPlanMode() ?? false,
+      enterPlanMode: () => sessionRef?.enterPlanMode() ?? false,
+      exitPlanMode: (target) => sessionRef?.exitPlanMode(target) ?? false,
+      requestPlanApproval: (request, signal) =>
+        sessionRef?.requestPlanApproval(request, signal) ??
+        Promise.resolve({ approved: false, feedback: '会话尚未就绪' }),
+    },
+  });
+  const session = new Session({
+    provider,
+    model: 'fake-model',
+    systemPrompt: 'system',
+    tools: registry.list(),
+    cwd: process.cwd(),
+  });
+  sessionRef = session;
+  return {
+    session,
+    view: render(
+      <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+    ),
+  };
+}
+
 describe('App 交互（ink-testing-library）', () => {
   it('输入提交：user block 上屏，assistant 回复完成一轮 turn', async () => {
     const { lastFrame, stdin } = makeApp(new FakeProvider([textStep('你好')]));
@@ -221,5 +250,107 @@ describe('App 交互（ink-testing-library）', () => {
       expect(lastFrame()).toContain('☐ 写测试');
       expect(lastFrame()).toContain('完成了');
     });
+  });
+
+  it('计划批准弹窗：计划全文上屏，数字键 1 批准后退出计划模式、状态栏同步恢复', async () => {
+    const provider = new FakeProvider([
+      toolCallStep([{ name: 'enter_plan_mode', arguments: '{"reason":"先规划"}' }]),
+      toolCallStep([
+        { name: 'exit_plan_mode', arguments: JSON.stringify({ plan: '# 实施计划\n1. 先做甲' }) },
+      ]),
+      textStep('开始执行'),
+    ]);
+    const { session, view } = makePlanApp(provider);
+    const { lastFrame, stdin } = view;
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    // enter_plan_mode 已把权限切到 plan：状态栏经 plan-mode-changed 事件同步
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('计划待批准');
+      expect(lastFrame()).toContain('# 实施计划');
+      expect(lastFrame()).toContain('1. Approve');
+      expect(lastFrame()).toContain('⏸ plan mode');
+    });
+    stdin.write('1');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('开始执行');
+      // 弹窗已关闭，状态栏恢复进入前的 default
+      expect(lastFrame()).not.toContain('计划待批准');
+      expect(lastFrame()).toContain('? default');
+    });
+    expect(session.isPlanMode()).toBe(false);
+    expect(session.getPermissionMode()).toBe('default');
+    const toolMessages = session.getMessages().filter((m) => m.role === 'tool');
+    expect(toolMessages.map((m) => m.content)).toEqual([
+      expect.stringContaining('已进入计划模式'),
+      expect.stringContaining('计划已获批准'),
+    ]);
+  });
+
+  it('计划批准弹窗：数字键 2 拒绝，拒绝结果回喂模型继续 turn（仍在计划模式）', async () => {
+    const provider = new FakeProvider([
+      toolCallStep([{ name: 'enter_plan_mode', arguments: '{}' }]),
+      toolCallStep([
+        { name: 'exit_plan_mode', arguments: JSON.stringify({ plan: '# 计划 v1' }) },
+      ]),
+      textStep('那我修订计划'),
+    ]);
+    const { session, view } = makePlanApp(provider);
+    const { lastFrame, stdin } = view;
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('计划待批准');
+    });
+    stdin.write('2');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('那我修订计划');
+      expect(lastFrame()).toContain('⏸ plan mode');
+    });
+    expect(session.isPlanMode()).toBe(true);
+    const rejected = session
+      .getMessages()
+      .find((m) => m.role === 'tool' && m.name === 'exit_plan_mode');
+    expect(rejected).toMatchObject({ isError: true });
+    expect(rejected?.role === 'tool' && rejected.content).toContain('计划被拒绝');
+  });
+
+  it('Shift+Tab 切到 plan 即进入完整计划模式，切走即退出', async () => {
+    const provider = new FakeProvider([]);
+    const registry = createBuiltinRegistry();
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+    });
+    const { lastFrame, stdin } = render(
+      <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+    );
+
+    expect(session.isPlanMode()).toBe(false);
+    stdin.write('\x1b[Z'); // → acceptEdits
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('⏵ accept edits');
+    });
+    expect(session.isPlanMode()).toBe(false);
+    stdin.write('\x1b[Z'); // → plan：进入完整计划模式
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('⏸ plan mode');
+    });
+    expect(session.isPlanMode()).toBe(true);
+    stdin.write('\x1b[Z'); // → bypassPermissions：退出计划模式，目标是用户选择
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('⚠ bypass permissions');
+    });
+    expect(session.isPlanMode()).toBe(false);
+    expect(session.getPermissionMode()).toBe('bypassPermissions');
   });
 });

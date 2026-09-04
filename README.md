@@ -101,6 +101,12 @@ echo $?
 对后续判定立即生效。审批弹窗选 2（don't ask again）会把该次操作累积为会话级
 allow 规则（bash 按命令首词、write/edit 按文件路径），重启后失效。
 
+plan 是完整的计划模式闭环（对标 Claude Code）：模型判断任务复杂时可调用
+`enter_plan_mode` 主动进入（Shift+Tab 切到 plan / `--mode plan` 等价进入），
+此期间只读探索，system prompt 每步注入计划指引；调研完成后模型用
+`exit_plan_mode` 提交计划全文，弹窗经用户批准后退出（切回进入前的模式）并开始执行，
+被拒绝则带反馈修订后重新提交。Shift+Tab 从 plan 切走等价于退出计划模式。
+
 ### 斜杠命令
 
 TUI 内输入 `/` 开头的命令：
@@ -127,7 +133,8 @@ misty --resume <id前缀>   # 恢复指定会话
 
 ### 内置工具
 
-read / write / edit / bash / glob / grep / todo / agent / web_fetch / web_search。
+read / write / edit / bash / glob / grep / todo / agent / web_fetch / web_search /
+ask_user / enter_plan_mode / exit_plan_mode。
 `agent` 是子代理工具（`explore` 代码探索、`plan` 实现规划，只读、独立上下文、
 结果回流主会话）；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、15s 超时），
 `web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），两者均为只读；

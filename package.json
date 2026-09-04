@@ -6,12 +6,16 @@
   "bin": {
     "misty": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "dev": "tsx src/cli/main.ts",
     "build": "tsup",
+    "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint src tests",

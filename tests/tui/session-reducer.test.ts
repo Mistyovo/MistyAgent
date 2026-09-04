@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { AgentEvent } from '#/core/events';
 import {
   initialSessionUiState,
-  reduceApprovalReplied,
   reduceClearBlocks,
+  reduceDialogReplied,
   reduceEvent,
   reduceNotice,
   reduceStreamSync,
@@ -166,7 +166,7 @@ describe('reduceEvent 流式聚合', () => {
       { type: 'interrupted', reason: 'user' },
     );
     expect(state.streaming.active).toBe(false);
-    expect(state.pendingApproval).toBeNull();
+    expect(state.pendingDialogs).toEqual([]);
     expect(state.blocks.map((b) => b.kind)).toEqual(['assistant', 'notice']);
   });
 
@@ -184,18 +184,57 @@ describe('reduceEvent 流式聚合', () => {
   });
 });
 
-describe('审批状态', () => {
-  const request = { id: 'c1', toolName: 'bash', describeCall: 'Bash x', input: {}, reason: 'r' };
+describe('弹窗队列', () => {
+  const approval = { id: 'c1', toolName: 'bash', describeCall: 'Bash x', input: {}, reason: 'r' };
+  const question = {
+    id: 'q1',
+    question: '选哪个？',
+    options: [{ label: '甲' }, { label: '乙' }],
+  };
 
-  it('approval-requested 挂起，reduceApprovalReplied 清除', () => {
+  it('approval-requested 挂起，reduceDialogReplied 出队', () => {
     let state = run(
       initialSessionUiState(),
       { type: 'turn-started' },
-      { type: 'approval-requested', request },
+      { type: 'approval-requested', request: approval },
     );
-    expect(state.pendingApproval).toEqual(request);
-    state = reduceApprovalReplied(state);
-    expect(state.pendingApproval).toBeNull();
+    expect(state.pendingDialogs).toEqual([{ kind: 'approval', request: approval }]);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs).toEqual([]);
+  });
+
+  it('question-asked 挂起，reduceDialogReplied 出队', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'question-asked', request: question },
+    );
+    expect(state.pendingDialogs).toEqual([{ kind: 'question', request: question }]);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs).toEqual([]);
+  });
+
+  it('审批与提问同时挂起：一次只显示队首，先到的先显示', () => {
+    let state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'question-asked', request: question },
+      { type: 'approval-requested', request: approval },
+    );
+    expect(state.pendingDialogs.map((d) => d.kind)).toEqual(['question', 'approval']);
+    state = reduceDialogReplied(state);
+    expect(state.pendingDialogs.map((d) => d.kind)).toEqual(['approval']);
+  });
+
+  it('interrupted 清空弹窗队列', () => {
+    const state = run(
+      initialSessionUiState(),
+      { type: 'turn-started' },
+      { type: 'question-asked', request: question },
+      { type: 'approval-requested', request: approval },
+      { type: 'interrupted', reason: 'user' },
+    );
+    expect(state.pendingDialogs).toEqual([]);
   });
 });
 

@@ -13,9 +13,10 @@ import {
 import { errorMessage } from '../errors';
 import type { AgentEvent, EventListener, TurnStopReason } from '../events';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
-import type { ApprovalReplyOp, UserTurnOp } from '../ops';
+import type { ApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { ApprovalManager } from '../permission/approval';
 import type { PermissionRuntime } from '../permission/pipeline';
+import { QuestionManager, type QuestionReply, type QuestionRequest } from '../question';
 import type { TodoStore } from '../todos';
 import type { Tool } from '../tools/tool';
 
@@ -72,6 +73,7 @@ export class Session {
   private readonly listeners = new Set<EventListener>();
   private readonly queue: QueuedTurn[] = [];
   private readonly approvals: ApprovalManager;
+  private readonly questions = new QuestionManager();
   private readonly permission: PermissionRuntime;
   private permissionMode: PermissionMode;
   private readonly permissionRules: readonly PermissionRule[];
@@ -97,6 +99,9 @@ export class Session {
       });
     }
     this.approvals = new ApprovalManager(config.cwd);
+    this.questions.onAsked((request) => {
+      this.dispatch({ type: 'question-asked', request });
+    });
     this.permission = {
       getContext: () => ({
         mode: this.permissionMode,
@@ -214,9 +219,14 @@ export class Session {
   submit(op: UserTurnOp): Promise<RunTurnResult>;
   /** approval-reply：转发给 ApprovalManager；返回 false 表示没有该 id 的挂起审批 */
   submit(op: ApprovalReplyOp): boolean;
-  submit(op: UserTurnOp | ApprovalReplyOp): Promise<RunTurnResult> | boolean {
+  /** question-reply：转发给 QuestionManager；返回 false 表示没有该 id 的挂起提问 */
+  submit(op: QuestionReplyOp): boolean;
+  submit(op: UserTurnOp | ApprovalReplyOp | QuestionReplyOp): Promise<RunTurnResult> | boolean {
     if (op.type === 'approval-reply') {
       return this.approvals.reply(op.id, op.reply);
+    }
+    if (op.type === 'question-reply') {
+      return this.questions.reply(op.id, op.reply);
     }
     return new Promise((resolve) => {
       this.queue.push({ op, resolve });
@@ -224,9 +234,15 @@ export class Session {
     });
   }
 
+  /** ask_user 工具的宿主入口：挂起等 question-reply Op；interrupt / signal abort 落定 cancelled */
+  askUser(request: QuestionRequest, signal?: AbortSignal): Promise<QuestionReply> {
+    return this.questions.ask(request, signal);
+  }
+
   interrupt(): void {
     this.activeController?.abort();
     this.approvals.rejectAll('interrupted by user');
+    this.questions.cancelAll();
   }
 
   private dispatch(event: AgentEvent): void {

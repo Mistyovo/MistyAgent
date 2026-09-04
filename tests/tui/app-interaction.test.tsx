@@ -23,6 +23,29 @@ function makeApp(provider: ChatProvider) {
   );
 }
 
+/** 与 main.ts 相同的接线：ask_user 经 sessionRef 闭包拿到 Session 的提问能力 */
+function makeInteractiveApp(provider: ChatProvider) {
+  let sessionRef: Session | null = null;
+  const registry = createBuiltinRegistry({
+    askUser: (request, signal) =>
+      sessionRef?.askUser(request, signal) ?? Promise.resolve({ cancelled: true }),
+  });
+  const session = new Session({
+    provider,
+    model: 'fake-model',
+    systemPrompt: 'system',
+    tools: registry.list(),
+    cwd: process.cwd(),
+  });
+  sessionRef = session;
+  return {
+    session,
+    view: render(
+      <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+    ),
+  };
+}
+
 describe('App 交互（ink-testing-library）', () => {
   it('输入提交：user block 上屏，assistant 回复完成一轮 turn', async () => {
     const { lastFrame, stdin } = makeApp(new FakeProvider([textStep('你好')]));
@@ -100,6 +123,67 @@ describe('App 交互（ink-testing-library）', () => {
       expect(lastFrame()).toContain('ok-from-tool');
       expect(lastFrame()).toContain('执行完毕');
     });
+  });
+
+  it('提问弹窗：数字键直选，回答经工具结果回喂模型继续 turn', async () => {
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'ask_user',
+          arguments: '{"question":"用哪个框架？","options":[{"label":"React"},{"label":"Vue"}]}',
+        },
+      ]),
+      textStep('已按 React 继续'),
+    ]);
+    const { session, view } = makeInteractiveApp(provider);
+    const { lastFrame, stdin } = view;
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('提问：用哪个框架？');
+      expect(lastFrame()).toContain('1. React');
+    });
+    stdin.write('1');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('已按 React 继续');
+    });
+    // 弹窗已关闭（动态区不再渲染）
+    expect(lastFrame()).not.toContain('提问：用哪个框架？');
+    // 回答经工具结果回喂进了消息历史
+    const toolMessage = session.getMessages().find((m) => m.role === 'tool');
+    expect(toolMessage).toMatchObject({ name: 'ask_user', content: '用户选择了：React' });
+  });
+
+  it('提问弹窗：Esc 跳过，取消结果回喂模型', async () => {
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'ask_user',
+          arguments: '{"question":"要继续吗？","options":[{"label":"是"},{"label":"否"}]}',
+        },
+      ]),
+      textStep('那我自行决定'),
+    ]);
+    const { session, view } = makeInteractiveApp(provider);
+    const { lastFrame, stdin } = view;
+    stdin.write('go');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('go');
+    });
+    stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('提问：要继续吗？');
+    });
+    stdin.write('\x1b');
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain('那我自行决定');
+    });
+    const toolMessage = session.getMessages().find((m) => m.role === 'tool');
+    expect(toolMessage).toMatchObject({ name: 'ask_user', isError: true });
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('用户取消了提问');
   });
 
   it('todo 工具更新经事件流渲染到状态栏上方的任务列表', async () => {

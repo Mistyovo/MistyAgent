@@ -71,27 +71,41 @@ interface TerminalApp {
 /**
  * 以真实 eraseLines 路径挂载 App：虚拟终端按 widthMode 模拟物理渲染，
  * 组件侧通过 setTerminalWidthModeForTests 用同一模式预算行宽。
+ * wireAskUser=true 时按 main.ts 的方式给 ask_user 接提问能力（sessionRef 闭包）。
  */
 function mountTerminalApp(
   provider: ChatProvider,
   widthMode: WidthMode,
-  registry: ToolRegistry = createBuiltinRegistry(),
+  registry?: ToolRegistry,
+  wireAskUser = false,
 ): TerminalApp {
   setTerminalWidthModeForTests(widthMode);
   const stdout = new VirtualTerminal(120, 30, widthMode);
   const stderr = new VirtualTerminal(120, 30, widthMode);
   const stdin = new FakeTtyStdin();
+  let sessionRef: Session | null = null;
+  const resolvedRegistry =
+    registry ??
+    createBuiltinRegistry(
+      wireAskUser
+        ? {
+            askUser: (request, signal) =>
+              sessionRef?.askUser(request, signal) ?? Promise.resolve({ cancelled: true }),
+          }
+        : undefined,
+    );
   const session = new Session({
     provider,
     model: 'fake-model',
     systemPrompt: 'system',
-    tools: registry.list(),
+    tools: resolvedRegistry.list(),
     cwd: process.cwd(),
   });
+  sessionRef = session;
   // 虚拟终端在运行时满足 ink 的结构性要求（write/columns/rows/isTTY），
   // 类型上与 NodeJS.ReadStream/WriteStream 有差距，此处显式收窄
   const instance = render(
-    <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
+    <App session={session} registry={resolvedRegistry} model="fake-model" cwd={process.cwd()} />,
     {
       stdout: stdout as unknown as NodeJS.WriteStream,
       stdin: stdin as unknown as NodeJS.ReadStream,
@@ -273,6 +287,44 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
       expect(occurrences(content, '执行完毕')).toBe(1);
       // 弹窗关闭后动态区被干净擦除，不留「需要审批」残影
       expect(occurrences(content, '需要审批')).toBe(0);
+      expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
+    } finally {
+      instance.unmount();
+    }
+  }, 15_000);
+
+  it('提问弹窗内超长问题（歧义宽字符）：弹窗打开期间 spinner 重绘无残帧', async () => {
+    const question = `方案取舍${'…'.repeat(30)}${'——'.repeat(6)}请选择`;
+    const provider = new FakeProvider([
+      toolCallStep([
+        {
+          name: 'ask_user',
+          arguments: JSON.stringify({ question, options: [{ label: '甲' }, { label: '乙' }] }),
+        },
+      ]),
+      textStep('已继续'),
+    ]);
+    const { stdout, stdin, instance } = mountTerminalApp(provider, 'legacy-cjk', undefined, true);
+    try {
+      await sleep(100);
+      stdin.write('ask');
+      await sleep(100);
+      stdin.write('\r');
+      await waitForText(stdout, '提问：');
+      // 弹窗打开期间 spinner 以 80ms 帧持续重绘动态区，给残帧累积留足时间
+      await sleep(600);
+      const dialogContent = stdout.content();
+      dumpOnDemand(dialogContent, 'question-dialog-open');
+      expect(occurrences(dialogContent, '提问：')).toBe(1);
+      expect(maxBlankRun(dialogContent)).toBeLessThanOrEqual(2);
+      stdin.write('1'); // 直选「甲」
+      await waitForText(stdout, '已继续');
+      await sleep(300);
+      const content = stdout.content();
+      dumpOnDemand(content, 'question-dialog-done');
+      expect(occurrences(content, '已继续')).toBe(1);
+      // 弹窗关闭后动态区被干净擦除，不留「提问：」残影
+      expect(occurrences(content, '提问：')).toBe(0);
       expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
     } finally {
       instance.unmount();

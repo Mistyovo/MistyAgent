@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApprovalReply } from '#/core/permission/approval';
+import type { QuestionReply } from '#/core/question';
 import type { Session } from '#/core/session/session';
 import type { ToolRegistry } from '#/core/tools/registry';
 
 import {
   initialSessionUiState,
-  reduceApprovalReplied,
   reduceClearBlocks,
+  reduceDialogReplied,
   reduceEvent,
   reduceNotice,
   reduceStreamSync,
@@ -24,6 +25,7 @@ export interface SessionController {
   state: SessionUiState;
   submit(text: string): void;
   replyApproval(id: string, reply: ApprovalReply): void;
+  replyQuestion(id: string, reply: QuestionReply): void;
   /** 本地提示上屏（斜杠命令输出等） */
   notice(text: string): void;
   /** /clear：清空 Static 区 */
@@ -91,8 +93,16 @@ export function useSessionController(session: Session, registry: ToolRegistry): 
 
   const replyApproval = useCallback(
     (id: string, reply: ApprovalReply) => {
-      setState((s) => reduceApprovalReplied(s));
+      setState((s) => reduceDialogReplied(s));
       session.submit({ type: 'approval-reply', id, reply });
+    },
+    [session],
+  );
+
+  const replyQuestion = useCallback(
+    (id: string, reply: QuestionReply) => {
+      setState((s) => reduceDialogReplied(s));
+      session.submit({ type: 'question-reply', id, reply });
     },
     [session],
   );
@@ -105,5 +115,5 @@ export function useSessionController(session: Session, registry: ToolRegistry): 
     setState((s) => reduceClearBlocks(s));
   }, []);
 
-  return { state, submit, replyApproval, notice, clearBlocks };
+  return { state, submit, replyApproval, replyQuestion, notice, clearBlocks };
 }

@@ -180,13 +180,19 @@ async function action(options: CliOptions): Promise<void> {
 
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
-  // agent 工具经 sessionRef 闭包取运行期模型（/model 切换对后续子代理生效）；
-  // 子代理只可能在 turn 进行中运行，此时 sessionRef 必已赋值
+  // agent / ask_user 工具经 sessionRef 闭包取运行期状态（/model 切换、提问挂起）；
+  // 这些工具只可能在 turn 进行中运行，此时 sessionRef 必已赋值。
+  // print 无头模式不注入提问能力：ask_user 退化为"自行决策"的工具结果
   let sessionRef: Session | null = null;
   const registry = createBuiltinRegistry({
     todoStore,
     provider,
     getModel: () => sessionRef?.getModel() ?? loaded.settings.provider.defaultModel,
+    askUser:
+      options.print === undefined
+        ? (request, signal) =>
+            sessionRef?.askUser(request, signal) ?? Promise.resolve({ cancelled: true })
+        : undefined,
   });
   const sessionConfig = buildSessionConfig(loaded.settings, cwd);
   if (resumed !== null) {

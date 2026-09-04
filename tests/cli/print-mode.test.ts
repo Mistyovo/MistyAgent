@@ -101,6 +101,23 @@ describe('runPrintMode', () => {
     expect(stderr.text()).toMatch(/⏵ FakeRead\n✓ FakeRead（\d+ms）\n/);
   });
 
+  it('无头模式提问：ask_user 直接回喂自行决策，不挂起不弹审批', async () => {
+    const { code, stdout, stderr } = await run([
+      toolCallStep([
+        {
+          name: 'ask_user',
+          arguments: '{"question":"选哪个方案？","options":[{"label":"甲"},{"label":"乙"}]}',
+        },
+      ]),
+      textStep('自行决策收尾'),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toBe('自行决策收尾\n');
+    // 交互型工具权限直接放行：不出现审批拒绝行；工具完成行带 ✗（无头回喂是 isError）
+    expect(stderr).not.toContain('无头模式无法交互审批');
+    expect(stderr).toMatch(/✗ Ask: 选哪个方案？（\d+ms）/);
+  });
+
   it('error：错误写 stderr，退出码 1', async () => {
     const { code, stderr } = await run([[{ type: 'error', error: new Error('boom') }]]);
     expect(code).toBe(1);

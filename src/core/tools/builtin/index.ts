@@ -1,10 +1,12 @@
 import type { ChatProvider } from '#/provider/types';
 
+import type { AskUserFn } from '../../question';
 import { TodoStore } from '../../todos';
 import { ToolRegistry } from '../registry';
 import type { Tool } from '../tool';
 
 import { createAgentTool } from './agent';
+import { createAskUserTool } from './ask-user';
 import { bashTool } from './bash';
 import { editTool } from './edit';
 import { globTool } from './glob';
@@ -28,8 +30,8 @@ export const builtinTools: Tool[] = [
 ];
 
 /**
- * 宿主能力：有状态（todo）或依赖 provider（agent）的内置工具在 registry
- * 创建时从这里闭包注入。
+ * 宿主能力：有状态（todo）、依赖 provider（agent）或需要用户交互（ask_user）
+ * 的内置工具在 registry 创建时从这里闭包注入。
  */
 export interface BuiltinHost {
   /** 会话级 todo 存储；缺省时 registry 自建（与 Session 事件流断开） */
@@ -37,6 +39,8 @@ export interface BuiltinHost {
   /** 提供后注册 agent 子代理工具 */
   provider?: ChatProvider;
   getModel?: () => string;
+  /** 提供后 ask_user 可挂起等用户回答；缺省（无头模式）时工具回喂"自行决策" */
+  askUser?: AskUserFn | undefined;
 }
 
 export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
@@ -45,6 +49,7 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
     registry.register(tool);
   }
   registry.register(createTodoTool(host?.todoStore ?? new TodoStore()));
+  registry.register(createAskUserTool(host?.askUser));
   if (host?.provider !== undefined && host.getModel !== undefined) {
     registry.register(createAgentTool({ provider: host.provider, getModel: host.getModel }));
   }

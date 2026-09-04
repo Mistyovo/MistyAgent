@@ -11,6 +11,7 @@ import { isSlashCommand, runSlashCommand, type CommandContext } from './commands
 import { ApprovalDialog } from './components/ApprovalDialog';
 import { MessageList } from './components/MessageList';
 import { PromptInput } from './components/PromptInput';
+import { QuestionDialog } from './components/QuestionDialog';
 import { StatusBar } from './components/StatusBar';
 import { StreamingArea } from './components/StreamingArea';
 import { TodoList } from './components/TodoList';
@@ -27,7 +28,7 @@ const EXIT_ARM_MS = 3000;
 
 /**
  * 全局键位：
- * - Esc：中断进行中的 turn（审批弹窗打开时由弹窗处理为拒绝）
+ * - Esc：中断进行中的 turn（弹窗打开时由弹窗处理：审批=拒绝，提问=跳过）
  * - Shift+Tab：循环切换权限模式（Windows 终端到达为 \x1b[Z，ink 解析为 tab+shift）
  * - Ctrl+C：第一次提示"再按一次退出"（turn 在飞则顺手中断），3 秒内第二次退出
  *
@@ -35,14 +36,15 @@ const EXIT_ARM_MS = 3000;
  */
 export function App({ session, registry, model: initialModel, cwd }: AppProps) {
   const { exit } = useApp();
-  const { state, submit, replyApproval, notice, clearBlocks } = useSessionController(session, registry);
+  const { state, submit, replyApproval, replyQuestion, notice, clearBlocks } =
+    useSessionController(session, registry);
   const [model, setModel] = useState(initialModel);
   const [mode, setMode] = useState<PermissionMode>(() => session.getPermissionMode());
   const [exitArmed, setExitArmed] = useState(false);
   const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const busy = state.streaming.active;
-  const approval = state.pendingApproval;
+  const dialog = state.pendingDialogs[0] ?? null;
 
   useEffect(
     () => () => {
@@ -54,7 +56,7 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
   );
 
   useInput((input, key) => {
-    if (approval !== null) {
+    if (dialog !== null) {
       return;
     }
     if (key.escape) {
@@ -114,19 +116,27 @@ export function App({ session, registry, model: initialModel, cwd }: AppProps) {
     <Box flexDirection="column">
       <MessageList blocks={state.blocks} />
       <StreamingArea streaming={state.streaming} />
-      {approval !== null && (
+      {dialog?.kind === 'approval' && (
         <ApprovalDialog
-          request={approval}
+          request={dialog.request}
           cwd={cwd}
           onReply={(reply) => {
-            replyApproval(approval.id, reply);
+            replyApproval(dialog.request.id, reply);
+          }}
+        />
+      )}
+      {dialog?.kind === 'question' && (
+        <QuestionDialog
+          request={dialog.request}
+          onReply={(reply) => {
+            replyQuestion(dialog.request.id, reply);
           }}
         />
       )}
       <PromptInput
         busy={busy}
         queuedCount={state.queuedCount}
-        disabled={approval !== null}
+        disabled={dialog !== null}
         onSubmit={handleSubmit}
       />
       <TodoList todos={state.todos} />

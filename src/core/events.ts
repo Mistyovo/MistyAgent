@@ -1,6 +1,7 @@
 import type { FinishReason, TokenUsage } from '#/provider/types';
 
 import type { ApprovalRequest } from './permission/approval';
+import type { QuestionRequest } from './question';
 import type { TodoItem } from './todos';
 
 export interface TurnStartedEvent {
@@ -70,6 +71,12 @@ export interface ApprovalRequestedEvent {
   request: ApprovalRequest;
 }
 
+/** ask_user 工具挂起等用户回答时发出；UI 弹窗后以 question-reply Op 回复 */
+export interface QuestionAskedEvent {
+  type: 'question-asked';
+  request: QuestionRequest;
+}
+
 /** 上下文压缩完成（自动或 /compact 手动触发）后发出 */
 export interface CompactedEvent {
   type: 'compacted';
@@ -98,6 +105,7 @@ export type AgentEvent =
   | ErrorEvent
   | InterruptedEvent
   | ApprovalRequestedEvent
+  | QuestionAskedEvent
   | CompactedEvent
   | TodosUpdatedEvent;
 

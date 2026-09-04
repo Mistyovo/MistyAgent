@@ -1,5 +1,6 @@
 import type { AgentEvent } from '#/core/events';
 import type { ApprovalRequest } from '#/core/permission/approval';
+import type { QuestionRequest } from '#/core/question';
 import type { TodoItem } from '#/core/todos';
 import type { TokenUsage } from '#/provider/types';
 
@@ -64,10 +65,16 @@ export interface StreamingState {
   text: string;
 }
 
+/** 待用户决断的弹窗：审批或提问。一次只显示队首，先到的先显示 */
+export type PendingDialog =
+  | { kind: 'approval'; request: ApprovalRequest }
+  | { kind: 'question'; request: QuestionRequest };
+
 export interface SessionUiState {
   blocks: UiBlock[];
   streaming: StreamingState;
-  pendingApproval: ApprovalRequest | null;
+  /** 审批/提问弹窗队列；回复队首后出队，露出下一个 */
+  pendingDialogs: PendingDialog[];
   /** 已提交但尚未开始执行的 user-turn 数（session 内部排队） */
   queuedCount: number;
   /** 上一个 turn 的累计 token 用量，状态栏用 */
@@ -87,7 +94,7 @@ export function initialSessionUiState(): SessionUiState {
   return {
     blocks: [],
     streaming: { active: false, reasoning: '', text: '' },
-    pendingApproval: null,
+    pendingDialogs: [],
     queuedCount: 0,
     lastUsage: null,
     todos: [],
@@ -136,9 +143,11 @@ export function reduceStreamSync(state: SessionUiState, text: string, reasoning:
   };
 }
 
-/** 审批弹窗已回复（UI 动作）：清掉挂起请求 */
-export function reduceApprovalReplied(state: SessionUiState): SessionUiState {
-  return state.pendingApproval === null ? state : { ...state, pendingApproval: null };
+/** 弹窗已回复（UI 动作）：队首出队，露出队列中下一个弹窗 */
+export function reduceDialogReplied(state: SessionUiState): SessionUiState {
+  return state.pendingDialogs.length === 0
+    ? state
+    : { ...state, pendingDialogs: state.pendingDialogs.slice(1) };
 }
 
 /** 本地提示上屏（斜杠命令输出等），不进消息历史 */
@@ -233,7 +242,7 @@ export function reduceEvent(
       return {
         ...pushBlock(flushed, { kind: 'notice', text: '已中断' }),
         streaming: { active: false, reasoning: '', text: '' },
-        pendingApproval: null,
+        pendingDialogs: [],
       };
     }
     case 'error': {
@@ -245,7 +254,15 @@ export function reduceEvent(
         : { ...withError, streaming: { active: false, reasoning: '', text: '' } };
     }
     case 'approval-requested':
-      return { ...state, pendingApproval: event.request };
+      return {
+        ...state,
+        pendingDialogs: [...state.pendingDialogs, { kind: 'approval', request: event.request }],
+      };
+    case 'question-asked':
+      return {
+        ...state,
+        pendingDialogs: [...state.pendingDialogs, { kind: 'question', request: event.request }],
+      };
     case 'compacted':
       return pushBlock(state, {
         kind: 'notice',

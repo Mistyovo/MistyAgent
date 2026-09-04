@@ -57,14 +57,15 @@ function isFileEditAccess(tool: Tool, input: unknown): boolean {
 /**
  * 判定流水线（思路借鉴 Claude Code permissions.ts 与 codex orchestrator）：
  * 1. deny 规则命中 → deny（最高优先，任何模式都不可越过）
- * 2. plan 模式 + 写/执行 → deny（只读模式不弹审批，直接拒绝）
- * 3. bypassPermissions → allow
- * 4. ask 规则命中 → ask
- * 5. acceptEdits + 文件写类 → allow
- * 6. allow 规则命中 → allow
- * 7. 会话级审批缓存命中 → allow
- * 8. 只读工具 → allow
- * 9. 兜底 → ask
+ * 2. 交互型工具（提问本身即用户对话）→ allow（再弹审批是循环交互；plan 模式同样放行）
+ * 3. plan 模式 + 写/执行 → deny（只读模式不弹审批，直接拒绝）
+ * 4. bypassPermissions → allow
+ * 5. ask 规则命中 → ask
+ * 6. acceptEdits + 文件写类 → allow
+ * 7. allow 规则命中 → allow
+ * 8. 会话级审批缓存命中 → allow
+ * 9. 只读工具 → allow
+ * 10. 兜底 → ask
  */
 export function evaluatePermission(
   tool: Tool,
@@ -74,6 +75,9 @@ export function evaluatePermission(
   const denyRule = findMatchingRule(ctx.rules, 'deny', tool.name, input, ctx.cwd);
   if (denyRule !== undefined) {
     return { kind: 'deny', reason: `被 deny 规则 ${describeRule(denyRule)} 拒绝` };
+  }
+  if (tool.interactive === true) {
+    return ALLOW;
   }
   const readOnly = tool.accesses(input).every((access) => access.kind === 'read');
   if (ctx.mode === 'plan' && !readOnly) {

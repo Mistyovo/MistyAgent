@@ -161,6 +161,7 @@ describe('registry', () => {
   it('注册内置工具并输出 ToolDefinition（无宿主能力时不含 agent）', () => {
     const registry = createBuiltinRegistry();
     expect(registry.list().map((t) => t.name).toSorted()).toEqual([
+      'ask_user',
       'bash',
       'edit',
       'glob',

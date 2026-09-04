@@ -33,6 +33,8 @@ export interface Tool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: z.ZodType;
+  /** 工具本身即用户交互（如 ask_user 提问）：权限流水线在 deny 规则后直接放行，不再弹审批 */
+  readonly interactive?: boolean;
   isReadOnly(input: unknown): boolean;
   accesses(input: unknown): ToolAccess[];
   /** 一句话描述本次调用，给 UI 用；input 不合法时回退为工具名 */
@@ -45,6 +47,8 @@ export interface ToolSpec<Schema extends z.ZodType> {
   name: string;
   description: string;
   inputSchema: Schema;
+  /** 默认未声明（按普通工具走权限流水线） */
+  interactive?: boolean;
   /** 默认 false（按写处理，串行调度） */
   isReadOnly?: (input: z.output<Schema>) => boolean;
   /** 默认 [{ kind: 'execute' }]（与一切冲突） */
@@ -60,6 +64,7 @@ export function defineTool<Schema extends z.ZodType>(
     name: def.name,
     description: def.description,
     inputSchema: def.inputSchema,
+    ...(def.interactive === true ? { interactive: true } : {}),
     isReadOnly: (input) => {
       const parsed = def.inputSchema.safeParse(input);
       if (!parsed.success) {

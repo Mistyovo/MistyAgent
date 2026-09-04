@@ -1,9 +1,12 @@
+import path from 'node:path';
+
 import type { PermissionMode, PermissionRule } from '#/config/schema';
 
 import type { Tool } from '../tools/tool';
 
 import { ApprovalManager } from './approval';
-import { describeRule, findMatchingRule } from './rules';
+import { describeRule, extractPath, findMatchingRule } from './rules';
+import { checkSensitivePath } from './safety';
 
 export type PermissionDecision =
   | { kind: 'allow' }
@@ -55,17 +58,45 @@ function isFileEditAccess(tool: Tool, input: unknown): boolean {
 }
 
 /**
+ * 敏感路径安全护栏：write/edit 类工具的目标命中保护清单一律 deny，
+ * 任何模式（含 bypassPermissions）与 allow 规则都不可越过。
+ * v1 只管带 path 的文件工具，不解析 bash 命令内容。
+ */
+function sensitivePathDenial(
+  tool: Tool,
+  input: unknown,
+  cwd: string,
+): PermissionDecision | undefined {
+  if (!isFileEditAccess(tool, input)) {
+    return undefined;
+  }
+  const inputPath = extractPath(input);
+  if (inputPath === null) {
+    return undefined;
+  }
+  const absolute = path.isAbsolute(inputPath)
+    ? path.normalize(inputPath)
+    : path.resolve(cwd, inputPath);
+  const check = checkSensitivePath(absolute);
+  if (!check.sensitive) {
+    return undefined;
+  }
+  return { kind: 'deny', reason: `受保护路径：${inputPath}（${check.reason ?? '敏感文件'}）` };
+}
+
+/**
  * 判定流水线（思路借鉴 Claude Code permissions.ts 与 codex orchestrator）：
  * 1. deny 规则命中 → deny（最高优先，任何模式都不可越过）
- * 2. 交互型工具（提问本身即用户对话）→ allow（再弹审批是循环交互；plan 模式同样放行）
- * 3. plan 模式 + 写/执行 → deny（只读模式不弹审批，直接拒绝）
- * 4. bypassPermissions → allow
- * 5. ask 规则命中 → ask
- * 6. acceptEdits + 文件写类 → allow
- * 7. allow 规则命中 → allow
- * 8. 会话级审批缓存命中 → allow
- * 9. 只读工具 → allow
- * 10. 兜底 → ask
+ * 2. 敏感路径护栏命中 → deny（对齐 Claude Code safetyCheck，bypassPermissions 也不可越过）
+ * 3. 交互型工具（提问本身即用户对话）→ allow（再弹审批是循环交互；plan 模式同样放行）
+ * 4. plan 模式 + 写/执行 → deny（只读模式不弹审批，直接拒绝）
+ * 5. bypassPermissions → allow
+ * 6. ask 规则命中 → ask
+ * 7. acceptEdits + 文件写类 → allow
+ * 8. allow 规则命中 → allow
+ * 9. 会话级审批缓存命中 → allow
+ * 10. 只读工具 → allow
+ * 11. 兜底 → ask
  */
 export function evaluatePermission(
   tool: Tool,
@@ -75,6 +106,10 @@ export function evaluatePermission(
   const denyRule = findMatchingRule(ctx.rules, 'deny', tool.name, input, ctx.cwd);
   if (denyRule !== undefined) {
     return { kind: 'deny', reason: `被 deny 规则 ${describeRule(denyRule)} 拒绝` };
+  }
+  const sensitiveDeny = sensitivePathDenial(tool, input, ctx.cwd);
+  if (sensitiveDeny !== undefined) {
+    return sensitiveDeny;
   }
   if (tool.interactive === true) {
     return ALLOW;

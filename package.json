@@ -26,6 +26,8 @@
     "commander": "^14.0.0",
     "get-east-asian-width": "^1.6.0",
     "ink": "^6.0.0",
+    "lowlight": "^3.3.0",
+    "marked": "^18.0.11",
     "openai": "^6.0.0",
     "picomatch": "^4.0.7",
     "react": "^19.0.0",

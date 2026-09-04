@@ -11,6 +11,7 @@ import { TodoStore } from '#/core/todos';
 import { createBuiltinRegistry } from '#/core/tools/builtin';
 import { defineTool } from '#/core/tools/tool';
 import { App } from '#/tui/App';
+import { getTerminalWidthMode } from '#/tui/terminal-text';
 import type { ChatProvider } from '#/provider/types';
 
 import { FakeProvider, textStep, toolCallStep } from '../core/fake-provider';
@@ -19,6 +20,9 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /** 剥掉全部空白：物理折行会断开长路径，wrap 后再比较时用它归一化 */
 const flat = (s: string): string => s.replace(/\s+/g, '');
+
+/** 用户消息前缀符号随终端宽度模式切换（▍ / 老式 conhost 回退 >） */
+const userMarker = (): string => (getTerminalWidthMode() === 'legacy-cjk' ? '>' : '▍');
 
 function makeApp(provider: ChatProvider) {
   const registry = createBuiltinRegistry();
@@ -95,7 +99,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('> hello');
+      expect(lastFrame()).toContain(`${userMarker()} hello`);
       expect(lastFrame()).toContain('你好');
     });
   });

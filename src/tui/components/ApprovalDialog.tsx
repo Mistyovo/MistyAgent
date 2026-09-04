@@ -6,7 +6,7 @@ import { sessionRuleFor, type ApprovalReply, type ApprovalRequest } from '#/core
 import { describeRule, extractCommand, extractPath } from '#/core/permission/rules';
 
 import { useTerminalTextWrap } from '../terminal-text';
-import { getTheme } from '../theme';
+import { getTheme, type Theme } from '../theme';
 
 export interface ApprovalDialogProps {
   request: ApprovalRequest;
@@ -72,6 +72,20 @@ export function approvalDetailLines(request: ApprovalRequest): string[] {
 interface Option {
   decision: ApprovalReply['decision'];
   label: string;
+}
+
+/** edit 审批的 -/+ 预览行着色；其余工具详情保持 dim */
+function diffLineColor(toolName: string, line: string, theme: Theme): string | null {
+  if (toolName !== 'edit') {
+    return null;
+  }
+  if (line.startsWith('-')) {
+    return theme.markdown.diffRemove;
+  }
+  if (line.startsWith('+')) {
+    return theme.markdown.diffAdd;
+  }
+  return null;
 }
 
 /**
@@ -144,13 +158,24 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
         {wrap(`需要审批：${request.describeCall}`, 3)}
       </Text>
       <Text dimColor>{wrap(request.reason, 3)}</Text>
-      {detail.length > 0 && <Text dimColor>{wrap(detail.join('\n'), 3)}</Text>}
+      {detail.length > 0 && (
+        <Box flexDirection="column">
+          {detail.map((line, index) => {
+            const color = diffLineColor(request.toolName, line, theme);
+            return (
+              <Text key={index} {...(color === null ? { dimColor: true } : { color })}>
+                {wrap(line, 3)}
+              </Text>
+            );
+          })}
+        </Box>
+      )}
       {options.map((option, index) => (
         <Text key={option.decision} {...(index === selection ? { color: theme.accent } : {})}>
           {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
         </Text>
       ))}
-      <Text dimColor>{wrap('1/2/3 直接选择，←/→ 移动，Enter 确认，Esc 拒绝', 3)}</Text>
+      <Text dimColor>{wrap('1 Yes | 2 不再询问 | 3 拒绝', 3)}</Text>
     </Box>
   );
 }

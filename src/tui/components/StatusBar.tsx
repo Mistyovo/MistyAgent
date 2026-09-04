@@ -33,11 +33,14 @@ export function formatTokenCount(count: number): string {
   return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
-/** 底栏：cwd basename · 模型 · 权限模式（符号/文案取自 M3 元数据，颜色取自主题）· token 用量。
- *  不画边框线：box-drawing 字符（─│ 等 East Asian Ambiguous）在中文 cmd.exe
- *  老式 conhost 里按 2 格渲染，满宽边框行会物理换行、与 ink 的行高预算错位，
- *  eraseLines 逐帧少擦导致残帧/空白累积。整行物理宽度按 列数-2 预算
- *  （-1 满宽保险、-1 paddingX 左格），余量不够时从 basename 截断。 */
+/** 反色底栏：左簇 basename / 模型 / 权限模式（符号/文案取自模式元数据，颜色取自主题），
+ *  右簇 busy / 后台任务 / token 用量 / 退出提示，中间空格填充。
+ *  整行固定 列数-1 宽：满宽写在老式 conhost 会物理折行，与 ink 的行高预算错位，
+ *  eraseLines 逐帧少擦导致残帧。背景由外层 Box 的 backgroundColor 整行填充
+ *  （含 padding 与空隙），子 Text 经 backgroundContext 继承同色底。
+ *  填充宽度必须自己按终端模式量（measureTerminalWidth）：不能用 space-between——
+ *  yoga 按 string-width（歧义字符 1 格）定位右簇，legacy-cjk 下 ↑↓⚙… 物理占 2 格，
+ *  右簇会整体超出预算折行。内容超宽时从 basename 截断；不画边框线（同根因）。 */
 export const StatusBar = memo(function StatusBar({
   cwd,
   model,
@@ -49,30 +52,46 @@ export const StatusBar = memo(function StatusBar({
 }: StatusBarProps) {
   const meta = permissionModeMeta[mode];
   const theme = getTheme();
-  const basename = path.basename(cwd) || cwd;
   const widthMode = getTerminalWidthMode();
-  const budget = useTerminalColumns() - 2;
+  const barWidth = useTerminalColumns() - 1;
+  const contentBudget = barWidth - 2; // paddingX 左右各 1
+
+  const modeText = `${meta.symbol} ${meta.label}`;
   const tail =
-    `  ${model}  ${meta.symbol} ${meta.label}` +
     (busy ? '  …' : '') +
     (runningTasks > 0 ? `  ⚙ ${runningTasks}` : '') +
     (usage === null
       ? ''
-      : `  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`) +
-    (exitArmed ? '  再按一次 Ctrl+C 退出' : '');
-  const basenameWidth = Math.max(0, budget - measureTerminalWidth(tail, widthMode));
-  const basenameShown = truncateTerminalText(basename, basenameWidth, widthMode);
+      : `  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`);
+  const exitText = exitArmed ? '  再按一次 Ctrl+C 退出' : '';
+
+  const basename = path.basename(cwd) || cwd;
+  const fixedWidth = measureTerminalWidth(`${model}  ${modeText}${tail}${exitText}`, widthMode);
+  // basename 后还有 2 格间隔；截断为空时间隔一并省略，余量由中间填充吸收
+  const basenameShown = truncateTerminalText(
+    basename,
+    Math.max(0, contentBudget - fixedWidth - 2),
+    widthMode,
+  );
+  const head = basenameShown === '' ? model : `${basenameShown}  ${model}`;
+  const fillWidth = Math.max(
+    0,
+    contentBudget -
+      measureTerminalWidth(`${head}  ${modeText}`, widthMode) -
+      measureTerminalWidth(`${tail}${exitText}`, widthMode),
+  );
+
   return (
-    <Box marginTop={1} paddingX={1}>
-      {basenameShown !== '' && <Text dimColor>{basenameShown}</Text>}
-      <Text dimColor>{`  ${model}  `}</Text>
-      <Text color={theme.permissionMode[mode]}>{`${meta.symbol} ${meta.label}`}</Text>
-      {busy && <Text dimColor>{'  …'}</Text>}
-      {runningTasks > 0 && <Text dimColor>{`  ⚙ ${runningTasks}`}</Text>}
+    <Box marginTop={1} width={barWidth} paddingX={1} backgroundColor={theme.statusBarBg}>
+      <Text color={theme.statusBar}>{`${head}  `}</Text>
+      <Text color={theme.permissionMode[mode]}>{modeText}</Text>
+      {fillWidth > 0 && <Text>{' '.repeat(fillWidth)}</Text>}
+      {busy && <Text color={theme.statusBar}>{'  …'}</Text>}
+      {runningTasks > 0 && <Text color={theme.statusBar}>{`  ⚙ ${runningTasks}`}</Text>}
       {usage !== null && (
-        <Text dimColor>{`  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`}</Text>
+        <Text color={theme.statusBar}>{`  ↑${formatTokenCount(usage.inputTokens)} ↓${formatTokenCount(usage.outputTokens)}`}</Text>
       )}
-      {exitArmed && <Text color={theme.error}>{'  再按一次 Ctrl+C 退出'}</Text>}
+      {exitArmed && <Text color={theme.error}>{exitText}</Text>}
     </Box>
   );
 });

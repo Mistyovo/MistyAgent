@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Box, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 
 import type { PermissionMode } from '#/config/schema';
 import type { McpManager } from '#/core/mcp/manager';
-import { nextPermissionMode } from '#/core/permission/modes';
+import { nextPermissionMode, permissionModeMeta } from '#/core/permission/modes';
 import type { Session } from '#/core/session/session';
 import type { ToolRegistry } from '#/core/tools/registry';
 
@@ -19,6 +19,8 @@ import { StreamingArea } from './components/StreamingArea';
 import { TodoList } from './components/TodoList';
 import type { PendingDialog } from './controllers/session-reducer';
 import { useSessionController } from './controllers/session-events';
+import { useTerminalTextWrap } from './terminal-text';
+import { getTheme } from './theme';
 
 export interface AppProps {
   session: Session;
@@ -30,6 +32,26 @@ export interface AppProps {
 }
 
 const EXIT_ARM_MS = 3000;
+
+/** 空会话欢迎头（启动值快照，不随 turn 内 fallback/模式切换更新）。
+ *  只能渲染在动态区：ink 单棵树只支持一个 Static（被消息区占用），
+ *  Static 内容恒在动态区之上——常驻 banner 会被夹到消息历史与流式区之间，
+ *  因此 banner 随空态一起退场。 */
+function WelcomeBanner({ model, mode }: { model: string; mode: PermissionMode }) {
+  const theme = getTheme();
+  const wrap = useTerminalTextWrap();
+  const meta = permissionModeMeta[mode];
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold color={theme.accent}>
+        Misty
+      </Text>
+      <Text dimColor>
+        {wrap(`${model} · ${meta.symbol} ${meta.label} · Shift+Tab 切换权限模式 · /help 查看命令`)}
+      </Text>
+    </Box>
+  );
+}
 
 /**
  * 全局键位：
@@ -53,6 +75,8 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
 
   const busy = state.streaming.active;
   const dialog = state.pendingDialogs[0] ?? null;
+  const wrap = useTerminalTextWrap();
+  const emptySession = state.blocks.length === 0;
 
   /** 弹窗期间 Ctrl+C 的"按拒绝关闭"：与弹窗各自 Esc 的语义一致（审批=拒绝，提问=跳过，计划批准=拒绝） */
   const rejectDialog = (pending: PendingDialog): void => {
@@ -166,6 +190,7 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
 
   return (
     <Box flexDirection="column">
+      {emptySession && <WelcomeBanner model={model} mode={mode} />}
       <MessageList blocks={state.blocks} />
       <StreamingArea streaming={state.streaming} />
       {dialog?.kind === 'approval' && (
@@ -193,6 +218,7 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
           }}
         />
       )}
+      {emptySession && <Text dimColor>{wrap('输入消息开始，/help 查看命令')}</Text>}
       <PromptInput
         busy={busy}
         queuedCount={state.queuedCount}

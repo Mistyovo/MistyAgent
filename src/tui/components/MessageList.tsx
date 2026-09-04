@@ -5,8 +5,10 @@ import { Box, Static, Text } from 'ink';
 import { TOOL_OUTPUT_PREVIEW_LINES } from '#/core/output-spill';
 
 import type { ToolBlock, UiBlock } from '../controllers/session-reducer';
-import { useTerminalTextWrap } from '../terminal-text';
+import { getTerminalWidthMode, useTerminalTextWrap } from '../terminal-text';
 import { getTheme } from '../theme';
+
+import { Markdown } from './Markdown';
 
 const OUTPUT_PREVIEW_LINES = TOOL_OUTPUT_PREVIEW_LINES;
 
@@ -56,12 +58,14 @@ function BlockView({ block }: { block: UiBlock }) {
   const theme = getTheme();
   switch (block.kind) {
     case 'user': {
+      // 左侧色条风格：老式 conhost 把 ▍ 按 2 格渲染且观感差，回退 '>'；前缀恒占 2 格
+      const marker = getTerminalWidthMode() === 'legacy-cjk' ? '>' : '▍';
       const lines = wrap(block.text, 2).split('\n');
       return (
         <Box flexDirection="column">
           {lines.map((line, index) => (
             <Text key={index} color={theme.userText}>
-              {index === 0 ? <Text color={theme.userMarker}>{'> '}</Text> : '  '}
+              {index === 0 ? <Text color={theme.userMarker}>{`${marker} `}</Text> : '  '}
               {line}
             </Text>
           ))}
@@ -79,7 +83,7 @@ function BlockView({ block }: { block: UiBlock }) {
               {wrap(reasoning)}
             </Text>
           )}
-          {text !== '' && <Text>{wrap(text)}</Text>}
+          {text !== '' && <Markdown text={text} />}
         </Box>
       );
     }

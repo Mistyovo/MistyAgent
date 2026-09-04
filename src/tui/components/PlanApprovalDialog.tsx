@@ -100,7 +100,7 @@ export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps
           {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
         </Text>
       ))}
-      <Text dimColor>{wrap('1/2 直接选择，←/→ 移动，Enter 确认，Esc 拒绝', 3)}</Text>
+      <Text dimColor>{wrap('←→ 移动 · 1/2 直选 · Enter 确认 · Esc 拒绝', 3)}</Text>
     </Box>
   );
 }

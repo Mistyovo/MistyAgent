@@ -157,7 +157,7 @@ afterEach(() => {
 describe('真实终端渲染（虚拟终端 + eraseLines 路径）', () => {
   it('narrow 终端（ink 预算语义）：turn 完整落屏且无大片空白', async () => {
     const content = await runTurnInTerminal('narrow');
-    expect(content).toContain('> 你好');
+    expect(content).toContain('▍ 你好');
     expect(content).toContain('用户在打招呼');
     expect(content).toContain('你好！我是 Misty。');
     expect(maxBlankRun(content)).toBeLessThanOrEqual(2);

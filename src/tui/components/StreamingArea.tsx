@@ -34,6 +34,8 @@ function Spinner({ label }: { label: string }) {
  * 进行中的流式输出区。借鉴 Claude Code 的防抖动技巧：
  * 文本只渲染到最后一个换行符，完整行才上屏；
  * 只有不完整的尾部行时退化为 spinner（Thinking… / Responding…）。
+ * 流式期间按纯文本渲染、不解析 markdown（否则每个节流帧都要全量解析），
+ * turn 完成落块进 Static 区后由 MessageList 的 Markdown 组件一次性渲染。
  */
 export function StreamingArea({ streaming }: { streaming: StreamingState }) {
   const wrap = useTerminalTextWrap();

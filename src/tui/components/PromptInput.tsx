@@ -243,7 +243,9 @@ export const PromptInput = memo(function PromptInput({
             : { segments: wrapTerminalLine(line, budget, widthMode), cursorSegment: -1, cursorCol: 0 };
         return wrapped.segments.map((segment, segmentIndex) => (
           <Text key={`${index}:${segmentIndex}`}>
-            <Text color={theme.promptMarker}>{index === 0 && segmentIndex === 0 ? '> ' : '  '}</Text>
+            <Text {...(busy ? { dimColor: true } : { color: theme.promptMarker })}>
+              {index === 0 && segmentIndex === 0 ? '> ' : '  '}
+            </Text>
             {segmentIndex === wrapped.cursorSegment ? (
               <LineWithCursor line={segment} col={wrapped.cursorCol} />
             ) : (

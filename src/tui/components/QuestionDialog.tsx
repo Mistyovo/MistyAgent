@@ -85,8 +85,8 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
   });
 
   const hint = multi
-    ? '空格/1-4 勾选，↑/↓ 移动，Enter 确认，Esc 跳过'
-    : '1-4 直选，↑/↓ 移动，Enter 确认，Esc 跳过';
+    ? '↑↓ 移动 · 空格/1-4 勾选 · Enter 确认 · Esc 跳过'
+    : '↑↓ 移动 · 1-4 直选 · Enter 确认 · Esc 跳过';
   const theme = getTheme();
   // 问题与选项文案来自模型（上游不可控），一律 sanitize+物理折行后上屏
   return (

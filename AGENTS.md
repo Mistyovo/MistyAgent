@@ -8,6 +8,7 @@
 - Commit 用 Conventional Commits（`feat(core): …`、`fix(permission): …`），每里程碑一个 commit
 - 注释克制：不写解释"做了什么"的注释，代码自解释
 - TUI 组件只渲染事件、提交 Op，禁止直接 import provider 或绕过 core 做事
+- TUI 上屏文本必须过 `src/tui/terminal-text.ts`：每行物理宽度 ≤ 列数-1（歧义宽字符按终端模式计），上游不可控文本必须 sanitize+折行，否则 eraseLines 错位积残帧
 - 工具失败不中断 agent loop：错误转成 tool result 回喂模型
 - API key 只走环境变量（`MISTY_API_KEY` / `OPENAI_API_KEY`），禁止写进任何落盘配置
 

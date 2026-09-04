@@ -5,6 +5,8 @@ import { Box, Text, useInput } from 'ink';
 import { sessionRuleFor, type ApprovalReply, type ApprovalRequest } from '#/core/permission/approval';
 import { describeRule, extractCommand, extractPath } from '#/core/permission/rules';
 
+import { useTerminalTextWrap } from '../terminal-text';
+
 export interface ApprovalDialogProps {
   request: ApprovalRequest;
   cwd: string;
@@ -115,22 +117,38 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   });
 
   const detail = approvalDetailLines(request);
+  // 内容宽度预算：左边框 1 格 + paddingX 左 1 格 + 1 格余量，reserve 3。
+  // 命令/路径/文件内容都是上游不可控文本，sanitize+物理折行后才能进动态区。
+  const wrap = useTerminalTextWrap();
   // 边框用 classic（ASCII + - |）：round/single 的 ─│╭ 等是 East Asian Ambiguous
   // 字符，在中文 cmd.exe 老式 conhost 按 2 格渲染，长内容时边框行物理换行，
-  // 与 ink 行高预算错位会导致 eraseLines 残帧
+  // 与 ink 行高预算错位会导致 eraseLines 残帧。
+  // alignSelf flex-start：列容器里 Box 默认 stretch 到父宽（= 终端列数），
+  // 满宽边框行在老式 conhost 立即折行 → 宽度收缩到内容。
+  // borderRight 关闭：有右边框时短内容行会被 padding 空格撑到盒宽再跟 '|'，
+  // 行内歧义字符（…… 等）的物理加宽把 '|' 推过列边界 → 物理折行。去掉右边框后
+  // 行尾空格被 trimEnd，物理行宽只取决于内容本身。
   return (
-    <Box flexDirection="column" borderStyle="classic" borderColor="yellow" paddingX={1} marginTop={1}>
+    <Box
+      flexDirection="column"
+      alignSelf="flex-start"
+      borderStyle="classic"
+      borderColor="yellow"
+      borderRight={false}
+      paddingX={1}
+      marginTop={1}
+    >
       <Text bold color="yellow">
-        需要审批：{request.describeCall}
+        {wrap(`需要审批：${request.describeCall}`, 3)}
       </Text>
-      <Text dimColor>{request.reason}</Text>
-      {detail.length > 0 && <Text dimColor>{detail.join('\n')}</Text>}
+      <Text dimColor>{wrap(request.reason, 3)}</Text>
+      {detail.length > 0 && <Text dimColor>{wrap(detail.join('\n'), 3)}</Text>}
       {options.map((option, index) => (
         <Text key={option.decision} {...(index === selection ? { color: 'cyan' as const } : {})}>
-          {`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`}
+          {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
         </Text>
       ))}
-      <Text dimColor>1/2/3 直接选择，←/→ 移动，Enter 确认，Esc 拒绝</Text>
+      <Text dimColor>{wrap('1/2/3 直接选择，←/→ 移动，Enter 确认，Esc 拒绝', 3)}</Text>
     </Box>
   );
 }

@@ -4,29 +4,28 @@ import { Box, Text } from 'ink';
 
 import type { StreamingState } from '../controllers/session-reducer';
 import { completeLinesOnly } from '../controllers/stream-utils';
+import { getTerminalWidthMode, useTerminalTextWrap } from '../terminal-text';
 
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const ASCII_FRAMES = ['-', '\\', '|', '/'];
 
-/** 老式 Windows 控制台（无 Windows Terminal / TERM_PROGRAM）对 braille 字符支持差，回退 ASCII */
-const FRAMES =
-  process.platform === 'win32' &&
-  process.env.WT_SESSION === undefined &&
-  process.env.TERM_PROGRAM === undefined
-    ? ASCII_FRAMES
-    : BRAILLE_FRAMES;
+/** 老式 Windows 控制台（GBK 点阵）对 braille 字符支持差，回退 ASCII；模式判定与 terminal-text 统一 */
+function spinnerFrames(): string[] {
+  return getTerminalWidthMode() === 'legacy-cjk' ? ASCII_FRAMES : BRAILLE_FRAMES;
+}
 
 function Spinner({ label }: { label: string }) {
   const [index, setIndex] = useState(0);
+  const frames = spinnerFrames();
   useEffect(() => {
     const timer = setInterval(() => {
-      setIndex((current) => (current + 1) % FRAMES.length);
+      setIndex((current) => (current + 1) % frames.length);
     }, 80);
     return () => {
       clearInterval(timer);
     };
-  }, []);
-  return <Text color="cyan">{`${FRAMES[index] ?? ''} ${label}`}</Text>;
+  }, [frames.length]);
+  return <Text color="cyan">{`${frames[index % frames.length] ?? ''} ${label}`}</Text>;
 }
 
 /**
@@ -35,6 +34,7 @@ function Spinner({ label }: { label: string }) {
  * 只有不完整的尾部行时退化为 spinner（Thinking… / Responding…）。
  */
 export function StreamingArea({ streaming }: { streaming: StreamingState }) {
+  const wrap = useTerminalTextWrap();
   if (!streaming.active) {
     return null;
   }
@@ -44,11 +44,11 @@ export function StreamingArea({ streaming }: { streaming: StreamingState }) {
     <Box flexDirection="column" marginTop={1}>
       {reasoning.complete !== '' && (
         <Text dimColor italic>
-          {reasoning.complete}
+          {wrap(reasoning.complete)}
         </Text>
       )}
       {text.complete !== '' ? (
-        <Text>{text.complete}</Text>
+        <Text>{wrap(text.complete)}</Text>
       ) : (
         <Spinner label={streaming.text === '' ? 'Thinking…' : 'Responding…'} />
       )}

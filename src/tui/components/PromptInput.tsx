@@ -2,6 +2,14 @@ import { useRef, useState } from 'react';
 
 import { Box, Text, useInput } from 'ink';
 
+import {
+  getTerminalWidthMode,
+  sanitizeTerminalText,
+  useTerminalColumns,
+  wrapTerminalLine,
+  wrapTerminalLineWithCursor,
+} from '../terminal-text';
+
 export interface PromptInputProps {
   busy: boolean;
   /** session 队列中等待执行的 turn 数，>0 时显示在输入框下方 */
@@ -11,9 +19,9 @@ export interface PromptInputProps {
   onSubmit(text: string): void;
 }
 
-/** 粘贴的文本一次性到达时做换行归一化（Windows 终端粘贴多为 \r\n） */
+/** 粘贴的文本一次性到达时做换行归一化（Windows 终端粘贴多为 \r\n）并剥掉控制字符 */
 function normalizePasted(input: string): string {
-  return input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return sanitizeTerminalText(input.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
 }
 
 /** 光标定位：把线性 offset 换算成（行, 列） */
@@ -123,17 +131,31 @@ export function PromptInput({ busy, queuedCount, disabled, onSubmit }: PromptInp
 
   const lines = value.split('\n');
   const position = locateCursor(lines, cursor);
+  // 内容预算 = 列数 - 1（满宽折行保险）- 2（'> ' 前缀）；
+  // value 入框时已 sanitize，折行不再改字符，光标 offset 保持对齐
+  const budget = useTerminalColumns() - 3;
+  const widthMode = getTerminalWidthMode();
   return (
     <Box flexDirection="column" marginTop={1}>
-      {lines.map((line, index) => (
-        <Text key={index}>
-          <Text color="green">{index === 0 ? '> ' : '  '}</Text>
-          {index === position.line ? <LineWithCursor line={line} col={position.col} /> : line}
-          {index === 0 && value === '' && (
-            <Text dimColor>{busy ? 'turn 进行中，输入将进入队列…' : '输入消息，Enter 发送'}</Text>
-          )}
-        </Text>
-      ))}
+      {lines.flatMap((line, index) => {
+        const wrapped =
+          index === position.line
+            ? wrapTerminalLineWithCursor(line, position.col, budget, widthMode)
+            : { segments: wrapTerminalLine(line, budget, widthMode), cursorSegment: -1, cursorCol: 0 };
+        return wrapped.segments.map((segment, segmentIndex) => (
+          <Text key={`${index}:${segmentIndex}`}>
+            <Text color="green">{index === 0 && segmentIndex === 0 ? '> ' : '  '}</Text>
+            {segmentIndex === wrapped.cursorSegment ? (
+              <LineWithCursor line={segment} col={wrapped.cursorCol} />
+            ) : (
+              segment
+            )}
+            {index === 0 && segmentIndex === 0 && value === '' && (
+              <Text dimColor>{busy ? 'turn 进行中，输入将进入队列…' : '输入消息，Enter 发送'}</Text>
+            )}
+          </Text>
+        ));
+      })}
       {queuedCount > 0 && <Text dimColor>  +{queuedCount} 条消息排队中</Text>}
     </Box>
   );

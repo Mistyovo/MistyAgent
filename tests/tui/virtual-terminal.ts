@@ -193,6 +193,13 @@ export class VirtualTerminal extends EventEmitter {
         index += 1;
         continue;
       }
+      // conhost 对 \x0b（VT）/\x0c（FF）按换行进纸处理；ink 不会为它们多计行，
+      // 若 app 让它们裸奔进输出，eraseLines 行数必然对不上
+      if (ch === '\x0b' || ch === '\x0c') {
+        this.newline();
+        index += 1;
+        continue;
+      }
       const codePoint = ch.codePointAt(0)!;
       const text = String.fromCodePoint(codePoint);
       index += text.length;

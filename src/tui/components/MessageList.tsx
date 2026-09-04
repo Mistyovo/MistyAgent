@@ -1,10 +1,12 @@
 import { Box, Static, Text } from 'ink';
 
 import type { ToolBlock, UiBlock } from '../controllers/session-reducer';
+import { useTerminalTextWrap } from '../terminal-text';
 
 const OUTPUT_PREVIEW_LINES = 3;
 
 function ToolBlockView({ block }: { block: ToolBlock }) {
+  const wrap = useTerminalTextWrap();
   const head =
     block.status === 'running'
       ? { color: 'yellow' as const, suffix: ' …' }
@@ -18,14 +20,13 @@ function ToolBlockView({ block }: { block: ToolBlock }) {
   return (
     <Box flexDirection="column">
       <Text {...(head.color === undefined ? {} : { color: head.color })}>
-        ⏵ {block.description}
-        {head.suffix}
+        {wrap(`⏵ ${block.description}${head.suffix}`)}
       </Text>
       {block.status === 'done' && output !== '' && (
         <Box flexDirection="column" marginLeft={2}>
           {preview.map((line, index) => (
             <Text key={index} {...(block.isError ? { color: 'red' as const } : { dimColor: true })}>
-              {line}
+              {wrap(line, 2)}
             </Text>
           ))}
           {hidden > 0 && <Text dimColor>… 还有 {hidden} 行</Text>}
@@ -36,9 +37,10 @@ function ToolBlockView({ block }: { block: ToolBlock }) {
 }
 
 function BlockView({ block }: { block: UiBlock }) {
+  const wrap = useTerminalTextWrap();
   switch (block.kind) {
     case 'user': {
-      const lines = block.text.split('\n');
+      const lines = wrap(block.text, 2).split('\n');
       return (
         <Box flexDirection="column">
           {lines.map((line, index) => (
@@ -58,19 +60,19 @@ function BlockView({ block }: { block: UiBlock }) {
         <Box flexDirection="column">
           {reasoning !== null && reasoning !== '' && (
             <Text dimColor italic>
-              {reasoning}
+              {wrap(reasoning)}
             </Text>
           )}
-          {text !== '' && <Text>{text}</Text>}
+          {text !== '' && <Text>{wrap(text)}</Text>}
         </Box>
       );
     }
     case 'tool':
       return <ToolBlockView block={block} />;
     case 'error':
-      return <Text color="red">✗ {block.message}</Text>;
+      return <Text color="red">{wrap(`✗ ${block.message}`)}</Text>;
     case 'notice':
-      return <Text dimColor>— {block.text}</Text>;
+      return <Text dimColor>{wrap(`— ${block.text}`)}</Text>;
   }
 }
 

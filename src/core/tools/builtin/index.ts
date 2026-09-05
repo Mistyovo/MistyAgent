@@ -1,8 +1,12 @@
 import type { ChatProvider } from '#/provider/types';
 
+import type { TaskBoard } from '../../board';
+import type { CheckpointStore } from '../../checkpoint/checkpoint';
+import { withCheckpoint } from '../../checkpoint/wrap';
 import type { PermissionContext } from '../../permission/pipeline';
 import type { PlanModeHost } from '../../plan-mode';
 import type { AskUserFn } from '../../question';
+import type { SkillDefinition } from '../../skills/types';
 import type { SubagentDefinition } from '../../subagents';
 import { TaskManager } from '../../tasks';
 import { TodoStore } from '../../todos';
@@ -17,17 +21,19 @@ import { globTool } from './glob';
 import { grepTool } from './grep';
 import { createEnterPlanModeTool, createExitPlanModeTool } from './plan-mode';
 import { readTool } from './read';
+import { createSkillTool } from './skill';
 import { createTaskListTool, createTaskOutputTool, createTaskStopTool } from './tasks';
 import { createTodoTool } from './todo';
 import { webFetchTool } from './web-fetch';
 import { webSearchTool } from './web-search';
 import { writeTool } from './write';
 
-/** 无状态内置工具；bash / todo / agent / task_* 依赖宿主状态，由 createBuiltinRegistry 按宿主能力装配 */
+/**
+ * 无状态内置工具；write/edit（检查点包装）、bash / todo / agent / task_* 依赖宿主状态，
+ * 由 createBuiltinRegistry 按宿主能力装配
+ */
 export const builtinTools: Tool[] = [
   readTool,
-  writeTool,
-  editTool,
   globTool,
   grepTool,
   webFetchTool,
@@ -55,8 +61,14 @@ export interface BuiltinHost {
   taskManager?: TaskManager;
   /** 自定义子代理定义（.misty/agents/*.md 经 loadSubagentDefinitions 加载）；缺省只有内置 explore/plan */
   subagents?: SubagentDefinition[];
+  /** 任务级共享证据板：提供后子代理注入协作纪律段并收割结论中的事实/死路条目（/clear 时由宿主 reset） */
+  board?: TaskBoard;
+  /** 技能定义（经 loadSkillDefinitions + getBundledSkillDefinitions 汇总）；非空时注册 skill 工具 */
+  skills?: SkillDefinition[];
   /** 主会话权限上下文来源；缺省时子代理按 bypassPermissions 判定（只读工具本就自动放行） */
   getPermissionContext?: () => PermissionContext;
+  /** 检查点存储：提供后 write/edit 首次改动某文件前自动快照（/rewind 回滚的数据来源） */
+  checkpoints?: CheckpointStore | undefined;
 }
 
 export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
@@ -64,6 +76,10 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
   for (const tool of builtinTools) {
     registry.register(tool);
   }
+  // write/edit 经 withCheckpoint 包装：turn 内首写某文件前快照进检查点；宿主未提供则原样注册
+  const checkpoints = host?.checkpoints;
+  registry.register(checkpoints === undefined ? writeTool : withCheckpoint(writeTool, checkpoints));
+  registry.register(checkpoints === undefined ? editTool : withCheckpoint(editTool, checkpoints));
   const taskManager = host?.taskManager ?? new TaskManager();
   registry.register(createBashTool(taskManager));
   registry.register(createTaskOutputTool(taskManager));
@@ -71,6 +87,9 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
   registry.register(createTaskListTool(taskManager));
   registry.register(createTodoTool(host?.todoStore ?? new TodoStore()));
   registry.register(createAskUserTool(host?.askUser));
+  if (host?.skills !== undefined && host.skills.length > 0) {
+    registry.register(createSkillTool(host.skills));
+  }
   registry.register(createEnterPlanModeTool(host?.planMode));
   registry.register(createExitPlanModeTool(host?.planMode));
   if (host?.provider !== undefined && host.getModel !== undefined) {
@@ -80,6 +99,7 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
         getModel: host.getModel,
         tasks: taskManager,
         ...(host.subagents !== undefined ? { subagents: host.subagents } : {}),
+        ...(host.board !== undefined ? { board: host.board } : {}),
         ...(host.getPermissionContext !== undefined
           ? { getPermissionContext: host.getPermissionContext }
           : {}),

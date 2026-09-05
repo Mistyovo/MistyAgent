@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import type { HooksSettings, PermissionMode, PermissionRule } from '#/config/schema';
 import type { ChatProvider, Message } from '#/provider/types';
 
+import type { CheckpointStore } from '../checkpoint/checkpoint';
 import {
   compactHistory,
   DEFAULT_MAX_CONTEXT_TOKENS,
@@ -14,6 +15,10 @@ import { errorMessage } from '../errors';
 import type { AgentEvent, EventListener, TurnStopReason } from '../events';
 import { HookRunner } from '../hooks';
 import { runTurn, type RunTurnResult } from '../loop/run-turn';
+import { runMemoryExtraction } from '../memory/extract';
+import { getMemoryDir } from '../memory/paths';
+import { findRelevantMemories, type RelevantMemory } from '../memory/recall';
+import { scanMemoryFiles } from '../memory/store';
 import type { ApprovalReplyOp, PlanApprovalReplyOp, QuestionReplyOp, UserTurnOp } from '../ops';
 import { spillToolOutput } from '../output-spill';
 import { ApprovalManager } from '../permission/approval';
@@ -74,6 +79,19 @@ export interface SessionConfig {
   tasks?: TaskManager | undefined;
   /** 用户配置的 shell 钩子（settings.json hooks 字段）；缺省不跑 hook */
   hooks?: HooksSettings | undefined;
+  /**
+   * 持久记忆：开启后每轮把召回的相关记忆 prepend 到 user 消息，
+   * turn 正常结束后后台异步提取新记忆；dir 缺省 ~/.misty/memory（测试注入 tmp 目录）
+   */
+  memory?: {
+    enabled: boolean;
+    dir?: string | undefined;
+  } | undefined;
+  /**
+   * 文件改动检查点存储：提供后每个 turn 边界开/关检查点（turn 内 write/edit 首写
+   * 某文件前由 withCheckpoint 快照），/clear 时清空；缺省不启用
+   */
+  checkpoints?: CheckpointStore | undefined;
 }
 
 interface QueuedTurn {
@@ -85,6 +103,21 @@ interface TranscriptState {
   dir: string;
   sessionId: string;
   writer: TranscriptWriter;
+}
+
+/** 记忆目录快照签名：filePath→mtimeMs 序列化，判断 turn 期间记忆目录是否被写过 */
+function memorySnapshot(dir: string): string {
+  return JSON.stringify(scanMemoryFiles(dir).map((h) => [h.filePath, h.mtimeMs]));
+}
+
+/** 召回的记忆块 prepend 到 user 消息原文前；记忆可能过时，提示模型引用前先验证 */
+function prependRecalledMemories(recalled: readonly RelevantMemory[], text: string): string {
+  const blocks = recalled.map((m) => `=== ${basename(m.path)} ===\n${m.content}`).join('\n\n');
+  return (
+    '<recalled-memories>\n' +
+    `以下记忆可能与本次请求相关（可能过时，引用前先验证）：\n\n${blocks}\n` +
+    `</recalled-memories>\n\n${text}`
+  );
 }
 
 /**
@@ -116,6 +149,11 @@ export class Session {
   private transcript: TranscriptState | null = null;
   private readonly todos: TodoStore | null = null;
   private readonly hookRunner: HookRunner | null = null;
+  private readonly checkpoints: CheckpointStore | null = null;
+  /** 本会话已展示过的记忆文件路径，召回时过滤避免重复上屏 */
+  private readonly alreadySurfaced = new Set<string>();
+  /** 记忆提取后台任务在飞标记：不叠加提取 */
+  private extractionInFlight = false;
 
   constructor(config: SessionConfig) {
     this.config = config;
@@ -134,6 +172,9 @@ export class Session {
       this.todos.onChange((todos) => {
         this.dispatch({ type: 'todos-updated', todos });
       });
+    }
+    if (config.checkpoints !== undefined) {
+      this.checkpoints = config.checkpoints;
     }
     if (config.tasks !== undefined) {
       config.tasks.onStarted((task, runningCount) => {
@@ -308,7 +349,9 @@ export class Session {
   /** /clear：清历史并开始新会话（启用持久化时开新 transcript 文件） */
   newSession(): void {
     this.messages.length = 0;
+    this.alreadySurfaced.clear();
     this.todos?.clear();
+    this.checkpoints?.reset();
     if (this.transcript !== null) {
       try {
         this.transcript = this.createTranscript(randomUUID());
@@ -458,6 +501,34 @@ export class Session {
     }
   }
 
+  private memoryDir(): string {
+    return this.config.memory?.dir ?? getMemoryDir();
+  }
+
+  /**
+   * turn 正常结束且期间记忆目录快照未变（主 agent 自己写过记忆则跳过）时，
+   * 后台异步提取新记忆；提取永不阻断 resolve，失败由 runMemoryExtraction 自身兜底
+   */
+  private maybeExtractMemories(result: RunTurnResult, snapshot: string | null): void {
+    if (snapshot === null || result.stopReason !== 'completed' || this.extractionInFlight) {
+      return;
+    }
+    const dir = this.memoryDir();
+    if (memorySnapshot(dir) !== snapshot) {
+      return;
+    }
+    this.extractionInFlight = true;
+    void runMemoryExtraction({
+      provider: this.config.provider,
+      model: this.model,
+      messages: [...this.messages],
+      cwd: this.config.cwd,
+      dir,
+    }).finally(() => {
+      this.extractionInFlight = false;
+    });
+  }
+
   private pump(): void {
     if (this.activeController !== null) {
       return;
@@ -468,37 +539,64 @@ export class Session {
     }
     const controller = new AbortController();
     this.activeController = controller;
-    const userMessage: Message = { role: 'user', content: next.op.text };
-    this.messages.push(userMessage);
-    this.persist(userMessage);
-    void runTurn({
-      provider: this.config.provider,
-      model: this.model,
-      getModel: () => this.model,
-      systemPrompt: this.config.systemPrompt,
-      // 计划模式可在一个 turn 内被工具切换：每步现读，激活时追加 plan 指引段
-      getSystemPrompt: () =>
-        this.planMode
-          ? `${this.config.systemPrompt}\n\n${buildPlanModePrompt()}`
-          : this.config.systemPrompt,
-      messages: this.messages,
-      onMessageAppended: (message) => {
-        this.persist(message);
-      },
-      maybeCompact: () => this.maybeCompact(),
-      forceCompact: () => this.forceCompact(),
-      tools: this.config.tools,
-      cwd: this.config.cwd,
-      maxSteps: this.config.maxSteps,
-      maxTokens: this.config.maxTokens,
-      fallbackModels: this.config.fallbackModels,
-      signal: controller.signal,
-      dispatchEvent: (event) => {
-        this.dispatch(this.withOutputSpill(event));
-      },
-      permission: this.permission,
-      hooks: this.hookRunner ?? undefined,
-    })
+    const memoryEnabled = this.config.memory?.enabled === true;
+    void (async (): Promise<RunTurnResult> => {
+      // 检查点记用户原文（不含召回注入）；turn 内 write/edit 首写由 withCheckpoint 快照
+      this.checkpoints?.beginTurn(next.op.text);
+      // 目录快照在召回前捕获：turn 期间主 agent 写过记忆则结束时跳过提取
+      const snapshot = memoryEnabled ? memorySnapshot(this.memoryDir()) : null;
+      let text = next.op.text;
+      if (memoryEnabled) {
+        // 召回失败/超时由 findRelevantMemories 兜底为 []，不影响主流程
+        const recalled = await findRelevantMemories({
+          provider: this.config.provider,
+          model: this.model,
+          query: next.op.text,
+          alreadySurfaced: this.alreadySurfaced,
+          signal: AbortSignal.timeout(5000),
+          dir: this.memoryDir(),
+        });
+        if (recalled.length > 0) {
+          for (const memory of recalled) {
+            this.alreadySurfaced.add(memory.path);
+          }
+          text = prependRecalledMemories(recalled, next.op.text);
+        }
+      }
+      const userMessage: Message = { role: 'user', content: text };
+      this.messages.push(userMessage);
+      this.persist(userMessage);
+      const result = await runTurn({
+        provider: this.config.provider,
+        model: this.model,
+        getModel: () => this.model,
+        systemPrompt: this.config.systemPrompt,
+        // 计划模式可在一个 turn 内被工具切换：每步现读，激活时追加 plan 指引段
+        getSystemPrompt: () =>
+          this.planMode
+            ? `${this.config.systemPrompt}\n\n${buildPlanModePrompt()}`
+            : this.config.systemPrompt,
+        messages: this.messages,
+        onMessageAppended: (message) => {
+          this.persist(message);
+        },
+        maybeCompact: () => this.maybeCompact(),
+        forceCompact: () => this.forceCompact(),
+        tools: this.config.tools,
+        cwd: this.config.cwd,
+        maxSteps: this.config.maxSteps,
+        maxTokens: this.config.maxTokens,
+        fallbackModels: this.config.fallbackModels,
+        signal: controller.signal,
+        dispatchEvent: (event) => {
+          this.dispatch(this.withOutputSpill(event));
+        },
+        permission: this.permission,
+        hooks: this.hookRunner ?? undefined,
+      });
+      this.maybeExtractMemories(result, snapshot);
+      return result;
+    })()
       .catch((error: unknown): RunTurnResult => {
         this.dispatch({ type: 'error', message: errorMessage(error), recoverable: false });
         return {
@@ -511,6 +609,7 @@ export class Session {
         next.resolve(result);
       })
       .finally(() => {
+        this.checkpoints?.endTurn();
         this.activeController = null;
         this.pump();
       });

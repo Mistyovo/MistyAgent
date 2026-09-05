@@ -6,8 +6,13 @@ import {
   resolveProviderConfig,
   type LoadedSettings,
 } from '#/config/settings';
+import { TaskBoard } from '#/core/board';
+import { CheckpointStore, cleanupCheckpoints } from '#/core/checkpoint/checkpoint';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { McpManager } from '#/core/mcp/manager';
+import { getMemoryDir } from '#/core/memory/paths';
+import { buildMemorySystemPromptSection } from '#/core/memory/section';
+import { readMemoryIndex } from '#/core/memory/store';
 import { cleanupSpilledOutputs } from '#/core/output-spill';
 import type { PlanModeHost } from '#/core/plan-mode';
 import { Session, type SessionConfig } from '#/core/session/session';
@@ -17,6 +22,10 @@ import {
   type ResumedSession,
   type SessionSummary,
 } from '#/core/session/transcript';
+import { getBundledSkillDefinitions } from '#/core/skills/bundled';
+import { loadSkillDefinitions } from '#/core/skills/loader';
+import { buildSkillsSystemPromptSection } from '#/core/skills/section';
+import type { SkillDefinition } from '#/core/skills/types';
 import { loadSubagentDefinitions } from '#/core/subagents';
 import { TodoStore } from '#/core/todos';
 import { TaskManager } from '#/core/tasks';
@@ -46,7 +55,11 @@ function flushStreams(): Promise<void> {
   return Promise.all([flush(process.stdout), flush(process.stderr)]).then(() => undefined);
 }
 
-function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig, 'provider' | 'tools'> {
+function buildSessionConfig(
+  settings: Settings,
+  cwd: string,
+  skills: readonly SkillDefinition[],
+): Omit<SessionConfig, 'provider' | 'tools'> {
   const permission: NonNullable<SessionConfig['permission']> = {};
   if (settings.permissionMode !== undefined) {
     permission.mode = settings.permissionMode;
@@ -54,9 +67,16 @@ function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig
   if (settings.permissionRules !== undefined) {
     permission.rules = settings.permissionRules;
   }
+  let systemPrompt = buildSystemPrompt(cwd);
+  if (settings.memory === true) {
+    systemPrompt += '\n\n' + buildMemorySystemPromptSection();
+  }
+  if (skills.length > 0) {
+    systemPrompt += '\n\n' + buildSkillsSystemPromptSection(skills);
+  }
   return {
     model: settings.provider.defaultModel,
-    systemPrompt: buildSystemPrompt(cwd),
+    systemPrompt,
     cwd,
     permission,
     transcript: {},
@@ -64,7 +84,61 @@ function buildSessionConfig(settings: Settings, cwd: string): Omit<SessionConfig
     maxContextTokens: settings.maxContextTokens,
     fallbackModels: settings.fallbackModels,
     hooks: settings.hooks,
+    memory: { enabled: settings.memory === true },
   };
+}
+
+/** /memory 上屏内容：记忆目录路径 + 当前索引内容（无索引说明为空） */
+function buildMemoryInfo(): string {
+  const dir = getMemoryDir();
+  const index = readMemoryIndex();
+  if (index === null || index.trim() === '') {
+    return `记忆目录：${dir}\n（索引为空：还没有写入任何记忆）`;
+  }
+  return `记忆目录：${dir}\n\n${index.trim()}`;
+}
+
+/** /skills 上屏内容：每行 name — description（标来源层级）；无技能返回空串 */
+function buildSkillsInfo(skills: readonly SkillDefinition[]): string {
+  if (skills.length === 0) {
+    return '';
+  }
+  const sourceLabel = { user: '用户级', project: '项目级', bundled: '内置' } as const;
+  const lines = skills.map(
+    (skill) => `  ${skill.name} — ${skill.description}（${sourceLabel[skill.source]}）`,
+  );
+  return ['已加载技能：', ...lines].join('\n');
+}
+
+/** /rewind 无参上屏：检查点清单（id、时间、触发文本、改动文件数） */
+function buildCheckpointList(store: CheckpointStore): string {
+  const checkpoints = store.list();
+  if (checkpoints.length === 0) {
+    return '没有可回滚的检查点';
+  }
+  const lines = checkpoints.map((checkpoint) => {
+    const time = new Date(checkpoint.createdAt).toLocaleTimeString();
+    const text = checkpoint.userText.replaceAll('\n', ' ');
+    const shown = text.length > 50 ? `${text.slice(0, 50)}…` : text;
+    return `  ${checkpoint.id}  ${time}  ${shown}（改动 ${checkpoint.files.length} 个文件）`;
+  });
+  return ['可回滚的检查点：', ...lines].join('\n');
+}
+
+/** /rewind 回调：无 id 列清单，有 id 回滚并描述结果（还原改动文件、删除 turn 内新建文件） */
+function rewindCheckpoints(store: CheckpointStore, id?: string): string {
+  if (id === undefined) {
+    return buildCheckpointList(store);
+  }
+  const parsed = Number.parseInt(id, 10);
+  if (Number.isNaN(parsed)) {
+    return `无效的检查点 id：${id}`;
+  }
+  const result = store.rewind(parsed);
+  if ('error' in result) {
+    return result.error;
+  }
+  return `已回滚到检查点 ${parsed}：还原 ${result.restored.length} 个文件，删除 ${result.deleted.length} 个新建文件`;
 }
 
 function formatSessionLine(session: SessionSummary): string {
@@ -128,6 +202,8 @@ async function action(options: CliOptions): Promise<void> {
 
   // 清理过期的工具输出落盘文件（os.tmpdir()/misty-output，超 24h 的删除）
   cleanupSpilledOutputs();
+  // 清理过期的检查点备份（超 7 天的删除）
+  cleanupCheckpoints();
 
   let loaded: LoadedSettings;
   try {
@@ -168,11 +244,21 @@ async function action(options: CliOptions): Promise<void> {
   const provider = createProvider(providerConfig);
   const todoStore = new TodoStore();
   const taskManager = new TaskManager();
+  const checkpointStore = new CheckpointStore(cwd);
+  // 任务级共享证据板：子代理间复用事实/死路；/clear 开新会话时经 onNewSession 清空
+  const taskBoard = new TaskBoard();
   // 自定义子代理定义（~/.misty/agents + <cwd>/.misty/agents）；坏文件降级为 warning
   const subagents = loadSubagentDefinitions(cwd);
   for (const warning of subagents.warnings) {
     console.error(`⚠ ${warning}`);
   }
+  // 技能定义（~/.misty/skills + <cwd>/.misty/skills，项目级同名覆盖用户级）+ 内置技能；
+  // 坏文件降级为 warning
+  const loadedSkills = loadSkillDefinitions(cwd);
+  for (const warning of loadedSkills.warnings) {
+    console.error(`⚠ ${warning}`);
+  }
+  const skills = [...loadedSkills.definitions, ...getBundledSkillDefinitions()];
   // MCP：连接是异步的而 registry/Session 构造是同步的——启动时 await 全部连接
   // （单 server 10s 超时）再进 print/TUI；失败的 server 降级为 warning，不阻断启动
   let mcpManager: McpManager | null = null;
@@ -199,9 +285,12 @@ async function action(options: CliOptions): Promise<void> {
   const registry = createBuiltinRegistry({
     todoStore,
     taskManager,
+    checkpoints: checkpointStore,
     provider,
     getModel: () => sessionRef?.getModel() ?? loaded.settings.provider.defaultModel,
     subagents: subagents.definitions,
+    skills,
+    board: taskBoard,
     // 子代理沿用主会话权限判定（含 /mode 运行时切换）；ask 由子代理侧自动拒绝
     getPermissionContext: () =>
       sessionRef?.getPermissionContext() ?? {
@@ -222,7 +311,7 @@ async function action(options: CliOptions): Promise<void> {
       registry.register(tool);
     }
   }
-  const sessionConfig = buildSessionConfig(loaded.settings, cwd);
+  const sessionConfig = buildSessionConfig(loaded.settings, cwd, skills);
   if (resumed !== null) {
     sessionConfig.transcript = { sessionId: resumed.sessionId };
     sessionConfig.initialMessages = resumed.messages;
@@ -234,6 +323,7 @@ async function action(options: CliOptions): Promise<void> {
     tools: registry.list(),
     todos: todoStore,
     tasks: taskManager,
+    checkpoints: checkpointStore,
   });
   sessionRef = session;
 
@@ -260,6 +350,10 @@ async function action(options: CliOptions): Promise<void> {
     model: loaded.settings.provider.defaultModel,
     cwd,
     mcpManager: mcpManager ?? undefined,
+    memoryInfo: loaded.settings.memory === true ? buildMemoryInfo : undefined,
+    skillsInfo: skills.length > 0 ? () => buildSkillsInfo(skills) : undefined,
+    rewind: (id) => rewindCheckpoints(checkpointStore, id),
+    onNewSession: () => taskBoard.reset(),
   });
   await instance.waitUntilExit();
   await mcpManager?.close();

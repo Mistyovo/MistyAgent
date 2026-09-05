@@ -29,6 +29,14 @@ export interface AppProps {
   cwd: string;
   /** 未配置 MCP 时缺省（/mcp 命令提示未配置） */
   mcpManager?: McpManager | undefined;
+  /** /memory 信息来源；记忆未开启时缺省（/memory 提示开启方式） */
+  memoryInfo?: (() => string) | undefined;
+  /** /skills 信息来源；无技能时缺省 */
+  skillsInfo?: (() => string) | undefined;
+  /** /rewind 检查点清单与回滚；检查点未启用时缺省 */
+  rewind?: ((id?: string) => string) | undefined;
+  /** /clear 开始新会话时的回调（清空任务级共享证据板）；缺省则 /clear 只重置会话 */
+  onNewSession?: (() => void) | undefined;
 }
 
 const EXIT_ARM_MS = 3000;
@@ -64,7 +72,7 @@ function WelcomeBanner({ model, mode }: { model: string; mode: PermissionMode })
  *
  * 输入路由：/ 开头走斜杠命令框架（不进 session.submit），其余按 user-turn 提交。
  */
-export function App({ session, registry, model: initialModel, cwd, mcpManager }: AppProps) {
+export function App({ session, registry, model: initialModel, cwd, mcpManager, memoryInfo, skillsInfo, rewind, onNewSession }: AppProps) {
   const { exit } = useApp();
   const { state, submit, replyApproval, replyQuestion, replyPlanApproval, notice, clearBlocks } =
     useSessionController(session, registry);
@@ -178,6 +186,10 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
             setMode(next);
           },
           mcpServers: mcpManager === undefined ? undefined : () => mcpManager.serverStatuses(),
+          memoryInfo,
+          skillsInfo,
+          rewind,
+          onNewSession,
           exit,
         };
         void runSlashCommand(text, ctx);
@@ -185,7 +197,7 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager }:
       }
       submit(text);
     },
-    [session, busy, notice, clearBlocks, mcpManager, exit, submit],
+    [session, busy, notice, clearBlocks, mcpManager, memoryInfo, skillsInfo, rewind, onNewSession, exit, submit],
   );
 
   return (

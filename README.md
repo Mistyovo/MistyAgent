@@ -43,6 +43,7 @@ CLI 入口 (commander)
   "fallbackModels": ["kimi-k1.5", "gpt-5-mini"],  // 主模型失败时依次降级的备用模型
   "permissionMode": "default",           // default | acceptEdits | plan | bypassPermissions
   "permissionRules": [{ "action": "deny", "tool": "write_file", "pattern": "*.env" }],
+  "memory": true,                        // 开启记忆系统（~/.misty/memory，见下文「记忆系统」）
   "maxTokens": 8192,
   "temperature": 0.6
 }
@@ -182,7 +183,10 @@ TUI 内输入 `/` 开头的命令：
 | `/model <name>` | 切换模型（运行时状态，不回写配置） |
 | `/mode [name]` | 切换权限模式；无参数显示当前模式 |
 | `/compact` | 手动压缩上下文（超过阈值时也会自动触发） |
-| `/clear` | 开始新会话（清屏 + 新 transcript） |
+| `/rewind [id]` | 列出文件改动检查点；带 id 回滚到该检查点 |
+| `/clear` | 开始新会话（清屏 + 新 transcript + 清空检查点） |
+| `/memory` | 查看记忆目录与当前索引（需 `memory: true` 开启） |
+| `/skills` | 列出已加载的技能 |
 | `/mcp` | 列出 MCP server 连接状态与工具数 |
 | `/exit` | 退出 |
 
@@ -204,12 +208,84 @@ ask_user / enter_plan_mode / exit_plan_mode。
 `agent` 是子代理工具（内置 `explore` 代码探索、`plan` 实现规划，只读、独立上下文、
 结果回流主会话；`run_in_background=true` 时后台运行并立即返回 taskId，用
 `task_output` 取结果、`task_stop` 中断，结束时经 task-finished 事件通知，与 bash
-后台任务共用同一任务管理器）；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、
+后台任务共用同一任务管理器）；`agent` 也支持 `tasks` 批量并行：一次传入 1–8 个
+互相独立的子任务并发执行，结果按任务分节聚合返回（部分失败不影响其他任务），
+可与 `run_in_background` 组合成后台并行；`web_fetch` 抓取网页（HTML 转纯文本、30000 字符截断、
 15s 超时），`web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），
 两者均为只读；连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
 
+子代理增强（借鉴 Cairn/muteki 的长程任务机制）：
+
+- **超时/烂尾救援**：子代理未正常收官（达到步数上限或出错）且无结论文本时，
+  沿同一消息历史追加一次无工具的收尾调用——只总结已在真实工具输出中确认的结论，
+  未验证的明确标注；用户主动中断（interrupted）不触发救援
+- **任务级证据/死路共享板**：子代理的 system prompt 附带协作纪律——确认的事实输出
+  独占一行 `VERIFIED_FACT: <结论>`，排除的方向输出 `DEADEND: <结论>`；宿主从结论中收割
+  进共享板，后续子代理的 prompt 注入板内容（已确认事实 / 已排除方向），
+  避免并行子代理重复劳动、重走死路。板为进程内存级，重启清空，`/clear` 时重置
+
+loop 质量护栏（常开，无需配置）：
+
+- **完成举证闸门**：turn 内发生过写/改/命令执行且最终结论声明完成
+  （"测试通过""已修复""all tests pass" 等），但没有任何一次成功的验证命令
+  （test/build/lint/typecheck 等）记录时，turn 不收官——注入提醒要求实际运行验证
+  或明确说明"未验证"及原因（每 turn 最多提醒一次）
+- **停滞检测**：连续 4 步全部只读调用且没有获得任何新信息（输出内容均为本 turn
+  已见）时，注入纠偏提示要求停止重复读取、基于已有信息行动或说明卡点
+  （每 turn 最多一次；doom-loop 已介入的步不重复计数）
+
 上下文：启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
 system prompt（总量 32KB 截断）。
+
+### 检查点与回滚
+
+每个 turn 开始时自动开一个检查点：turn 内 `write` / `edit` 首次改动某个文件前，
+先把原文件快照进该检查点。
+
+- `/rewind` 列出当前会话的检查点（id、时间、触发文本、改动文件数）
+- `/rewind <id>` 回滚到该检查点：还原其中改动的文件、删除该 turn 内新建的文件，
+  该检查点之后的检查点一并作废
+- 局限：只覆盖 `write` / `edit` 的改动（bash 命令与子代理的文件改动不入检查点）
+- `/clear` 开始新会话时清空检查点；超过 7 天的检查点在启动时自动清理
+
+### 记忆系统
+
+settings.json 设 `"memory": true` 开启（默认关闭）。开启后主代理自主维护
+`~/.misty/memory` 目录：`MEMORY.md` 索引（每条记忆一行指针）+ 按主题拆分的
+`.md` 记忆文件，frontmatter 带 `name` / `description` / `type` 四型分类
+（`user` 用户画像 / `feedback` 纠偏与确认 / `project` 项目动态 / `reference`
+外部系统指针）。
+
+- 每个 turn 自动召回与该轮输入相关的记忆，内容拼进该轮 user 消息（不进 system prompt）
+- turn 结束时若主代理没有写入任何记忆，后台提取子代理兜底分析本轮对话，补写值得保留的记忆
+- 写记忆目录不需要审批（记忆目录内的 write/edit 自动放行）
+- TUI 内 `/memory` 查看记忆目录路径与当前索引内容
+
+### Skills
+
+对标 Claude Code 的 skills：在 `~/.misty/skills/<name>/SKILL.md`（用户级）或
+`<cwd>/.misty/skills/<name>/SKILL.md`（项目级，同名覆盖用户级）放置技能文件，
+启动时加载，坏文件降级为警告不阻断启动。
+
+```markdown
+---
+name: review
+description: 代码评审：审查改动并输出问题清单
+when_to_use: 当用户想评审代码改动时使用（触发语如「review 一下」）
+argument-hint: [文件或范围]   # 可选；正文用 $ARGUMENTS 占位接收参数
+---
+
+# 评审流程
+...正文指令，调用时注入当前会话执行...
+```
+
+- `name` / `description` 必填（`name` 只允许字母/数字/连字符/下划线），
+  `when_to_use` / `argument-hint` 可选
+- 模型按 `when_to_use` / `description` 判断意图命中时，经 `skill` 工具自主触发，
+  技能正文注入当前会话内联执行（不是子代理，共享主会话上下文）
+- 内置 `skillify` 技能：做完一个可重复流程后说「把它做成 skill」，
+  经分轮采访把流程固化为 SKILL.md
+- TUI 内 `/skills` 查看已加载技能清单（含来源层级标注）
 
 ### 自定义子代理
 

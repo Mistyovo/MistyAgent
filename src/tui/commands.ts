@@ -17,6 +17,14 @@ export interface CommandContext {
   setMode(mode: PermissionMode): void;
   /** MCP server 状态查询；未配置 MCP 时缺省 */
   mcpServers?: (() => McpServerStatus[]) | undefined;
+  /** 记忆目录与索引信息（/memory）；记忆未开启时缺省 */
+  memoryInfo?: (() => string) | undefined;
+  /** 技能清单（/skills）；无技能时缺省或返回空串 */
+  skillsInfo?: (() => string) | undefined;
+  /** 检查点清单与回滚（/rewind）；检查点未启用时缺省 */
+  rewind?: ((id?: string) => string) | undefined;
+  /** /clear 开始新会话时回调（如清空任务级共享证据板）；缺省只重置会话本身 */
+  onNewSession?: (() => void) | undefined;
   exit(): void;
 }
 
@@ -47,6 +55,7 @@ const clear: SlashCommand = {
       ctx.notice('turn 进行中，无法清屏；先 Esc 中断当前 turn');
       return;
     }
+    ctx.onNewSession?.();
     ctx.session.newSession();
     ctx.clearBlocks();
     ctx.notice('已开始新会话');
@@ -133,7 +142,51 @@ const mcp: SlashCommand = {
   },
 };
 
-export const slashCommands: SlashCommand[] = [help, clear, model, mode, compact, mcp, exit];
+const memory: SlashCommand = {
+  name: 'memory',
+  description: '查看记忆目录与当前索引',
+  usage: '/memory',
+  execute: (_args, ctx) => {
+    if (ctx.memoryInfo === undefined) {
+      ctx.notice('记忆未开启（settings.json 设 memory: true）');
+      return;
+    }
+    ctx.notice(ctx.memoryInfo());
+  },
+};
+
+const skills: SlashCommand = {
+  name: 'skills',
+  description: '列出已加载的技能',
+  usage: '/skills',
+  execute: (_args, ctx) => {
+    const info = ctx.skillsInfo?.() ?? '';
+    if (info === '') {
+      ctx.notice('未加载任何 skill（在 ~/.misty/skills/<name>/SKILL.md 或 .misty/skills/<name>/SKILL.md 创建）');
+      return;
+    }
+    ctx.notice(info);
+  },
+};
+
+const rewind: SlashCommand = {
+  name: 'rewind',
+  description: '列出文件改动检查点，或回滚到指定检查点',
+  usage: '/rewind [id]',
+  execute: (args, ctx) => {
+    if (ctx.rewind === undefined) {
+      ctx.notice('检查点不可用');
+      return;
+    }
+    if (args === '') {
+      ctx.notice(`${ctx.rewind()}\n/rewind <id> 回滚到该检查点`);
+      return;
+    }
+    ctx.notice(ctx.rewind(args));
+  },
+};
+
+export const slashCommands: SlashCommand[] = [help, clear, model, mode, compact, rewind, memory, skills, mcp, exit];
 
 export function isSlashCommand(text: string): boolean {
   // 含换行的输入不判命令：单行输入敲不出 \n（Enter 即提交），多行文本只会来自

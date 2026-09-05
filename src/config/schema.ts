@@ -72,6 +72,8 @@ export const settingsSchema = z.object({
   hooks: hooksSettingsSchema.optional(),
   /** MCP servers：name → stdio 启动配置；其工具以 mcp__<server>__<tool> 名并入工具池 */
   mcpServers: z.record(z.string(), mcpServerConfigSchema).optional(),
+  /** 持久记忆开关：开启后主代理可读写 ~/.misty/memory，并在每轮召回相关记忆 */
+  memory: z.boolean().optional(),
 });
 
 export type PermissionMode = z.infer<typeof permissionModeSchema>;

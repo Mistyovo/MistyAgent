@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import type { PermissionMode, PermissionRule } from '#/config/schema';
 
+import { isMemoryPath } from '../memory/paths';
 import type { Tool } from '../tools/tool';
 
 import { ApprovalManager } from './approval';
@@ -58,6 +59,25 @@ function isFileEditAccess(tool: Tool, input: unknown): boolean {
 }
 
 /**
+ * 记忆目录写入：write/edit 类工具的目标解析后落在 ~/.misty/memory 内。
+ * 记忆是 agent 的自有状态，每次落盘都弹审批会打断心流，故直接放行；
+ * deny 规则、敏感路径护栏与 plan 模式只读拒绝都排在此步之前，仍可拦截。
+ */
+function isMemoryWriteAccess(tool: Tool, input: unknown, cwd: string): boolean {
+  if (!isFileEditAccess(tool, input)) {
+    return false;
+  }
+  const inputPath = extractPath(input);
+  if (inputPath === null) {
+    return false;
+  }
+  const absolute = path.isAbsolute(inputPath)
+    ? path.normalize(inputPath)
+    : path.resolve(cwd, inputPath);
+  return isMemoryPath(absolute);
+}
+
+/**
  * 敏感路径安全护栏：write/edit 类工具的目标命中保护清单一律 deny，
  * 任何模式（含 bypassPermissions）与 allow 规则都不可越过。
  * v1 只管带 path 的文件工具，不解析 bash 命令内容。
@@ -95,8 +115,9 @@ function sensitivePathDenial(
  * 7. acceptEdits + 文件写类 → allow
  * 8. allow 规则命中 → allow
  * 9. 会话级审批缓存命中 → allow
- * 10. 只读工具 → allow
- * 11. 兜底 → ask
+ * 10. 记忆目录（~/.misty/memory）写入 → allow
+ * 11. 只读工具 → allow
+ * 12. 兜底 → ask
  */
 export function evaluatePermission(
   tool: Tool,
@@ -132,6 +153,9 @@ export function evaluatePermission(
     return ALLOW;
   }
   if (findMatchingRule(ctx.sessionApprovals, 'allow', tool.name, input, ctx.cwd) !== undefined) {
+    return ALLOW;
+  }
+  if (isMemoryWriteAccess(tool, input, ctx.cwd)) {
     return ALLOW;
   }
   if (tool.isReadOnly(input)) {

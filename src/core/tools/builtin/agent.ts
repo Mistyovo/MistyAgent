@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { ChatProvider, Message } from '#/provider/types';
 
+import { harvestBoardEntries, type TaskBoard } from '../../board';
 import { errorMessage } from '../../errors';
 import type { AgentEvent, EventDispatcher } from '../../events';
 import { runTurn } from '../../loop/run-turn';
@@ -11,7 +12,7 @@ import { ApprovalManager } from '../../permission/approval';
 import type { PermissionContext, PermissionRuntime } from '../../permission/pipeline';
 import type { SubagentDefinition } from '../../subagents';
 import type { TaskManager } from '../../tasks';
-import { defineTool, type Tool, type ToolResult } from '../tool';
+import { defineTool, type Tool, type ToolContext, type ToolResult } from '../tool';
 
 import { createBashTool } from './bash';
 import { editTool } from './edit';
@@ -26,15 +27,35 @@ import { writeTool } from './write';
 const SUBAGENT_MAX_STEPS = 30;
 const MAX_OUTPUT_CHARS = 30_000;
 
-const inputSchema = z.object({
+const taskItemSchema = z.object({
   description: z.string().describe('一句话描述这个子任务'),
   prompt: z.string().describe('交给子代理的完整任务描述（它看不到主会话历史，必须自包含）'),
   subagent_type: z.string().describe('子代理类型；可用清单见工具描述'),
+});
+
+/** 批量并行的单个任务；字段与单发模式三字段同形 */
+type BatchTaskInput = z.output<typeof taskItemSchema>;
+
+const inputSchema = z.object({
+  description: z.string().optional().describe('一句话描述这个子任务（单发模式必填）'),
+  prompt: z
+    .string()
+    .optional()
+    .describe('交给子代理的完整任务描述（它看不到主会话历史，必须自包含；单发模式必填）'),
+  subagent_type: z.string().optional().describe('子代理类型；可用清单见工具描述（单发模式必填）'),
   run_in_background: z
     .boolean()
     .optional()
     .describe(
       'true 时后台运行：立即返回 taskId，用 task_output 查看进度与最终结果（block=true 可挂起等待），task_stop 中断；结束时收到通知',
+    ),
+  tasks: z
+    .array(taskItemSchema)
+    .min(1)
+    .max(8)
+    .optional()
+    .describe(
+      '并行批量模式：一次启动 1-8 个互相独立的子代理并发执行，结果按任务分节聚合返回；提供时忽略单发字段',
     ),
 });
 
@@ -68,6 +89,11 @@ export interface AgentToolHost {
   /** 自定义子代理定义（.misty/agents/*.md）；与内置 explore/plan 同名时被内置遮蔽 */
   subagents?: SubagentDefinition[];
   /**
+   * 任务级共享证据板：提供后子代理 systemPrompt 追加协作纪律段（含板内容快照），
+   * 结论中的 VERIFIED_FACT / DEADEND 标记行被收割进板，供后续子代理复用
+   */
+  board?: TaskBoard;
+  /**
    * 取主会话权限上下文（模式/规则/会话级审批累积），每次调用现读使 /mode 切换立即生效；
    * 缺省按 bypassPermissions 判定。子代理无交互能力：判定为 ask 的调用由子代理私有的
    * ApprovalManager 立即拒绝并回喂说明，不进主会话审批流
@@ -99,7 +125,9 @@ function buildDescription(host: AgentToolHost): string {
     '可用子代理类型（subagent_type）：\n' +
     `${lines.join('\n')}\n` +
     '子代理看不到本会话历史，prompt 必须自包含；前台调用返回其最终结论文本，' +
-    'run_in_background=true 时立即返回 taskId 后台运行（用 task_output 取结果）。'
+    'run_in_background=true 时立即返回 taskId 后台运行（用 task_output 取结果）。\n' +
+    '批量并行：tasks 传入 1-8 个 { description, prompt, subagent_type } 任务，' +
+    '适用于互相独立、可并行的子任务；并发执行，结果按任务分节聚合返回，部分失败不影响其他任务。'
   );
 }
 
@@ -135,6 +163,31 @@ function environmentLines(cwd: string, writable: boolean): string[] {
   ];
 }
 
+/**
+ * 共享证据板协作纪律段：call 时现读保证内容新鲜；板非空时附当前板内容快照
+ */
+function boardPromptSection(host: AgentToolHost): string | null {
+  const board = host.board;
+  if (board === undefined) {
+    return null;
+  }
+  const lines = [
+    '本任务有一块共享证据板（与同伴子代理共享）；动手前先读下方板内容。',
+    '工作中确认的关键事实用独占一行 "VERIFIED_FACT: <一行客观结论>" 输出，' +
+      '排除的方向用独占一行 "DEADEND: <一行结论>" 输出。',
+    '只写已在真实工具输出中验证过的客观内容，不要复述板上已有条目。',
+  ];
+  if (!board.isEmpty()) {
+    lines.push('', board.render());
+  }
+  return lines.join('\n');
+}
+
+function withBoardSection(host: AgentToolHost, systemPrompt: string): string {
+  const section = boardPromptSection(host);
+  return section === null ? systemPrompt : `${systemPrompt}\n\n${section}`;
+}
+
 function resolveSpec(
   host: AgentToolHost,
   type: string,
@@ -145,7 +198,7 @@ function resolveSpec(
     return {
       ok: true,
       spec: {
-        systemPrompt: [rolePrompt, ...environmentLines(cwd, false)].join('\n'),
+        systemPrompt: withBoardSection(host, [rolePrompt, ...environmentLines(cwd, false)].join('\n')),
         tools: DEFAULT_SUBAGENT_TOOLS,
         model: host.getModel(),
       },
@@ -182,7 +235,7 @@ function resolveSpec(
   return {
     ok: true,
     spec: {
-      systemPrompt: [def.prompt, ...environmentLines(cwd, writable)].join('\n'),
+      systemPrompt: withBoardSection(host, [def.prompt, ...environmentLines(cwd, writable)].join('\n')),
       tools,
       model: def.model ?? host.getModel(),
     },
@@ -202,6 +255,8 @@ function lastAssistantText(messages: readonly Message[]): string {
 interface SubagentRunDeps {
   host: AgentToolHost;
   spec: SubagentSpec;
+  /** 子代理类型名（证据板条目的来源标注用） */
+  type: string;
   prompt: string;
   cwd: string;
   signal: AbortSignal;
@@ -209,29 +264,61 @@ interface SubagentRunDeps {
   permission: PermissionRuntime;
 }
 
+/** 收尾救援只给两步：第一步总结，兜底一步防意外；tools 为空使其只能输出文本 */
+const SALVAGE_MAX_STEPS = 2;
+
+/** 对标 Cairn execute→conclude：探索烂尾时强令只总结已验证结论 */
+const SALVAGE_MESSAGE =
+  '你已被要求立即停止探索：只总结已在真实工具输出中确认过的结论与发现，' +
+  '未验证的明确标注『未验证』；禁止调用工具、禁止继续探索。';
+
+function harvestToBoard(host: AgentToolHost, type: string, text: string): void {
+  if (host.board === undefined) {
+    return;
+  }
+  for (const entry of harvestBoardEntries(text)) {
+    host.board.add(entry.kind, entry.text, `Agent(${type})`);
+  }
+}
+
 async function runSubagent(deps: SubagentRunDeps): Promise<ToolResult> {
   const messages: Message[] = [{ role: 'user', content: deps.prompt }];
-  const result = await runTurn({
+  const baseTurn = {
     provider: deps.host.provider,
     model: deps.spec.model,
     systemPrompt: deps.spec.systemPrompt,
     messages,
-    tools: deps.spec.tools,
     cwd: deps.cwd,
-    maxSteps: SUBAGENT_MAX_STEPS,
     signal: deps.signal,
     dispatchEvent: deps.dispatchEvent,
     permission: deps.permission,
+  };
+  const result = await runTurn({
+    ...baseTurn,
+    tools: deps.spec.tools,
+    maxSteps: SUBAGENT_MAX_STEPS,
   });
-  const text = lastAssistantText(messages);
+  let text = lastAssistantText(messages);
+  // 救援条件：有真实探索历史（messages 不止初始 prompt）却烂尾；用户主动中断不救
+  let salvageNote: string | null = null;
+  if (text === '' && result.stopReason !== 'interrupted' && messages.length > 1) {
+    messages.push({ role: 'user', content: SALVAGE_MESSAGE });
+    await runTurn({ ...baseTurn, tools: [], maxSteps: SALVAGE_MAX_STEPS });
+    text = lastAssistantText(messages);
+    if (text !== '' && (result.stopReason === 'max-steps' || result.stopReason === 'error')) {
+      salvageNote = '子代理未正常收官，以下为收尾总结';
+    }
+  }
   if (text === '') {
     return {
       output: `子代理没有产出文本结论（stopReason: ${result.stopReason}）`,
       isError: true,
     };
   }
+  harvestToBoard(deps.host, deps.type, text);
+  const body = salvageNote === null ? text : `${salvageNote}\n${text}`;
   const output = truncate(
-    text,
+    body,
     MAX_OUTPUT_CHARS,
     `[输出过长已截断，仅保留前 ${MAX_OUTPUT_CHARS} 字符]`,
   );
@@ -241,6 +328,168 @@ async function runSubagent(deps: SubagentRunDeps): Promise<ToolResult> {
   return { output };
 }
 
+interface SubagentScope {
+  permission: PermissionRuntime;
+  makeDispatcher: (sink?: (event: AgentEvent) => void) => EventDispatcher;
+}
+
+/**
+ * 单个子代理运行的私有作用域（独立权限运行时 + 事件分发器）。
+ * 子代理无交互能力：审批请求自动拒绝并回喂说明（对齐 print 无头模式的处理方式）。
+ * 私有 ApprovalManager：ask 不出子代理，主会话的挂起审批列表不受污染
+ */
+function createSubagentScope(host: AgentToolHost, cwd: string): SubagentScope {
+  const approvals = new ApprovalManager(cwd);
+  const permission: PermissionRuntime = {
+    getContext: () =>
+      host.getPermissionContext?.() ?? {
+        mode: 'bypassPermissions',
+        rules: [],
+        sessionApprovals: [],
+        cwd,
+      },
+    approvals,
+  };
+  const makeDispatcher = (sink?: (event: AgentEvent) => void): EventDispatcher => {
+    return (event) => {
+      if (event.type === 'approval-requested') {
+        approvals.reply(event.request.id, {
+          decision: 'reject',
+          feedback:
+            '子代理没有交互审批能力，该操作已自动拒绝。请改用只读方式完成，' +
+            '或在最终结论中说明需要主代理代为执行的写/执行操作。',
+        });
+        return;
+      }
+      sink?.(event);
+    };
+  };
+  return { permission, makeDispatcher };
+}
+
+/** 中断级联：父 signal abort → 子 loop abort */
+function cascadeSignal(parent: AbortSignal): AbortSignal {
+  const controller = new AbortController();
+  if (parent.aborted) {
+    controller.abort();
+  } else {
+    parent.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return controller.signal;
+}
+
+interface BatchSection {
+  index: number;
+  type: string;
+  description: string;
+  output: string;
+  isError: boolean;
+}
+
+function formatBatchSections(sections: BatchSection[]): string {
+  return sections
+    .map(
+      (section) =>
+        `## [${section.index}] ${section.type} · ${section.description}` +
+        `${section.isError ? ' ✗' : ''}\n${section.output}`,
+    )
+    .join('\n\n');
+}
+
+/**
+ * 批量内单个子任务：复用 resolveSpec + runSubagent 路径，独立权限作用域与消息历史；
+ * 未知类型等解析失败直接产出错误节，不启动子代理、不影响其他任务
+ */
+async function runBatchTask(
+  host: AgentToolHost,
+  task: BatchTaskInput,
+  index: number,
+  cwd: string,
+  signal: AbortSignal,
+): Promise<BatchSection> {
+  const resolved = resolveSpec(host, task.subagent_type, cwd);
+  if (!resolved.ok) {
+    return {
+      index,
+      type: task.subagent_type,
+      description: task.description,
+      output: resolved.error,
+      isError: true,
+    };
+  }
+  const scope = createSubagentScope(host, cwd);
+  const result = await runSubagent({
+    host,
+    spec: resolved.spec,
+    type: task.subagent_type,
+    prompt: task.prompt,
+    cwd,
+    signal,
+    dispatchEvent: scope.makeDispatcher(),
+    permission: scope.permission,
+  });
+  return {
+    index,
+    type: task.subagent_type,
+    description: task.description,
+    output: result.output,
+    isError: result.isError === true,
+  };
+}
+
+function runBatchAll(
+  host: AgentToolHost,
+  tasks: BatchTaskInput[],
+  cwd: string,
+  signal: AbortSignal,
+): Promise<BatchSection[]> {
+  return Promise.all(
+    tasks.map((task, offset) => runBatchTask(host, task, offset + 1, cwd, signal)),
+  );
+}
+
+/**
+ * 批量模式：前台并发后分节聚合（全部失败才整体 isError）；
+ * 后台登记单个任务，内部并发跑完把分节聚合文本写入缓冲后 settle（与单发后台同通道）
+ */
+async function callBatch(
+  host: AgentToolHost,
+  tasks: BatchTaskInput[],
+  background: boolean,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const first = tasks[0]!;
+  if (!background) {
+    const sections = await runBatchAll(host, tasks, ctx.cwd, cascadeSignal(ctx.signal));
+    const output = formatBatchSections(sections);
+    if (sections.every((section) => section.isError)) {
+      return { output, isError: true };
+    }
+    return { output };
+  }
+
+  if (host.tasks === undefined) {
+    return { output: '当前环境不支持后台子代理（缺少任务管理器）', isError: true };
+  }
+  const handle = host.tasks.startAgent(`Agent(并行 ${tasks.length} 任务) ${first.description} 等`);
+  // 后台任务刻意不级联 ctx.signal：interrupt / turn 结束不影响它（与单发后台一致）
+  void runBatchAll(host, tasks, ctx.cwd, handle.signal)
+    .then((sections) => {
+      const allFailed = sections.every((section) => section.isError);
+      handle.appendOutput(`\n--- 最终结论 ---\n${formatBatchSections(sections)}\n`);
+      handle.settle(allFailed ? 1 : 0);
+    })
+    .catch((error: unknown) => {
+      handle.appendOutput(`\n[子代理异常] ${errorMessage(error)}`);
+      handle.settle(1);
+    });
+  return {
+    output:
+      `后台并行子代理 ${handle.task.id} 已启动（${tasks.length} 个任务：${first.description} 等）。\n` +
+      '用 task_output 查看进度与最终结果（block=true 可挂起等待结束）；任务结束时会收到通知。',
+  };
+}
+
 /**
  * 子代理工具（借鉴 Claude Code AgentTool 与 kimi-code 的无状态 loop 复用）：
  * 起一个独立的 runTurn——新消息数组、专用 system prompt（含 cwd，不含 AGENTS.md）、
@@ -248,6 +497,11 @@ async function runSubagent(deps: SubagentRunDeps): Promise<ToolResult> {
  * 前台调用父 signal abort 级联到子 loop，返回最后一条 assistant 文本；
  * run_in_background=true 时登记到 TaskManager 立即返回 taskId，缓冲累积流式文本与
  * 工具调用摘要，结束/中断经 task-finished 事件通道通知。
+ * tasks 批量模式：多个互相独立的子代理并发执行（各自仍是独立 runTurn，不共享状态），
+ * 结果按任务分节聚合；也支持 run_in_background 整体转入后台。
+ * 宿主提供 TaskBoard 时：systemPrompt 注入共享证据板纪律段，结论里的 VERIFIED_FACT /
+ * DEADEND 行被收割进板；探索烂尾（有工具历史却无文本收官）时自动触发一次
+ * 无工具的收尾总结救援（对标 Cairn execute→conclude）。
  */
 export function createAgentTool(host: AgentToolHost): Tool {
   return defineTool({
@@ -256,58 +510,53 @@ export function createAgentTool(host: AgentToolHost): Tool {
     inputSchema,
     isReadOnly: () => true,
     accesses: () => [{ kind: 'read' }],
-    describeCall: (input) =>
-      input.run_in_background === true
-        ? `Agent(后台 ${input.subagent_type}) ${input.description}`
-        : `Agent(${input.subagent_type}) ${input.description}`,
+    describeCall: (input) => {
+      if (input.tasks !== undefined && input.tasks.length > 0) {
+        return `Agent(并行 ${input.tasks.length} 任务) ${input.tasks[0]!.description} 等`;
+      }
+      const type = input.subagent_type ?? '?';
+      const label = input.description ?? '';
+      return input.run_in_background === true ? `Agent(后台 ${type}) ${label}` : `Agent(${type}) ${label}`;
+    },
     call: async (input, ctx) => {
+      // tasks 非空 → 批量模式（忽略单发字段）；否则单发模式，三字段缺一不可
+      if (input.tasks !== undefined && input.tasks.length > 0) {
+        return callBatch(host, input.tasks, input.run_in_background === true, ctx);
+      }
+      if (
+        input.description === undefined ||
+        input.prompt === undefined ||
+        input.subagent_type === undefined
+      ) {
+        return {
+          output:
+            '单发模式需要 description、prompt、subagent_type 三个字段；' +
+            '并行批量执行请改用 tasks（1-8 个 { description, prompt, subagent_type }）。',
+          isError: true,
+        };
+      }
+
       const resolved = resolveSpec(host, input.subagent_type, ctx.cwd);
       if (!resolved.ok) {
         return { output: resolved.error, isError: true };
       }
       const { spec } = resolved;
 
-      // 子代理无交互能力：审批请求自动拒绝并回喂说明（对齐 print 无头模式的处理方式）。
-      // 私有 ApprovalManager：ask 不出子代理，主会话的挂起审批列表不受污染
-      const approvals = new ApprovalManager(ctx.cwd);
-      const permission: PermissionRuntime = {
-        getContext: () =>
-          host.getPermissionContext?.() ?? {
-            mode: 'bypassPermissions',
-            rules: [],
-            sessionApprovals: [],
-            cwd: ctx.cwd,
-          },
-        approvals,
+      const scope = createSubagentScope(host, ctx.cwd);
+      const runDeps = {
+        host,
+        spec,
+        type: input.subagent_type,
+        prompt: input.prompt,
+        cwd: ctx.cwd,
+        permission: scope.permission,
       };
-      const makeDispatcher = (sink?: (event: AgentEvent) => void): EventDispatcher => {
-        return (event) => {
-          if (event.type === 'approval-requested') {
-            approvals.reply(event.request.id, {
-              decision: 'reject',
-              feedback:
-                '子代理没有交互审批能力，该操作已自动拒绝。请改用只读方式完成，' +
-                '或在最终结论中说明需要主代理代为执行的写/执行操作。',
-            });
-            return;
-          }
-          sink?.(event);
-        };
-      };
-      const runDeps = { host, spec, prompt: input.prompt, cwd: ctx.cwd, permission };
 
       if (input.run_in_background !== true) {
-        // 中断级联：父 signal abort → 子 loop abort
-        const controller = new AbortController();
-        if (ctx.signal.aborted) {
-          controller.abort();
-        } else {
-          ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
-        }
         return runSubagent({
           ...runDeps,
-          signal: controller.signal,
-          dispatchEvent: makeDispatcher(),
+          signal: cascadeSignal(ctx.signal),
+          dispatchEvent: scope.makeDispatcher(),
         });
       }
 
@@ -335,8 +584,10 @@ export function createAgentTool(host: AgentToolHost): Tool {
         }
       };
       // 后台任务刻意不级联 ctx.signal：interrupt / turn 结束不影响它（与 bash 后台一致）
-      void runSubagent({ ...runDeps, signal: handle.signal, dispatchEvent: makeDispatcher(sink) })
+      void runSubagent({ ...runDeps, signal: handle.signal, dispatchEvent: scope.makeDispatcher(sink) })
         .then((result) => {
+          // runSubagent 内已收割原文；这里对聚合 output 再收一遍（去重幂等，防截断前缀差异漏收）
+          harvestToBoard(host, runDeps.type, result.output);
           handle.appendOutput(`\n--- 最终结论 ---\n${result.output}\n`);
           handle.settle(result.isError === true ? 1 : 0);
         })

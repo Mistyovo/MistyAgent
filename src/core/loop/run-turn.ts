@@ -6,8 +6,10 @@ import type { PermissionRuntime } from '../permission/pipeline';
 import { ToolRegistry } from '../tools/registry';
 import type { Tool } from '../tools/tool';
 
+import { evaluateCompletionGate } from './completion-gate';
 import { DoomLoopDetector } from './doom-loop';
 import type { ChatWithRetryOptions } from './retry';
+import { StallGuard } from './stall-guard';
 import { executeToolCalls } from './tool-scheduler';
 import { executeStep, type StepOutcome } from './turn-step';
 
@@ -133,6 +135,11 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   // doom-loop 检测器是 turn 级的：连续相同工具调用在 scheduler 里被升级为审批
   const doomLoop = new DoomLoopDetector();
+  // 完成举证闸门：turn 起点之后的消息切片用于核对验证证据，提醒预算每 turn 一次
+  const turnStartIndex = deps.messages.length;
+  let completionGateReminded = false;
+  // 零产出停滞检测：连续只读且输出全部已见的步累计到阈值后 steer 一次
+  const stallGuard = new StallGuard();
   let steps = 0;
   let finalStepForced = false;
   let overflowRetries = 0;
@@ -265,14 +272,40 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
     }
     appendAssistantMessage(pushMessage, outcome, false);
     if (finalStepForced || outcome.toolCalls.length === 0) {
+      // 完成举证闸门只在正常收官路径评估（finalStepForced 是强制收尾，不再干预）；
+      // 提醒后循环继续，再次到达收官点时无论证据是否补齐都直接放行
+      if (!finalStepForced && !completionGateReminded) {
+        const verdict = evaluateCompletionGate({
+          turnMessages: deps.messages.slice(turnStartIndex),
+          finalText: outcome.text,
+        });
+        if (!verdict.pass) {
+          completionGateReminded = true;
+          pushMessage({ role: 'user', content: verdict.reminder });
+          continue;
+        }
+      }
       return finish(finalStepForced ? 'max-steps' : 'completed');
     }
+
+    // doom-loop 触发强制审批的步不计入停滞检测（已有介入，避免双重干预）；
+    // reason 前缀与 tool-scheduler 的 doom-loop 文案对齐
+    let doomLoopIntervened = false;
+    const observeDoomLoop: EventDispatcher = (event) => {
+      if (
+        event.type === 'approval-requested' &&
+        event.request.reason.startsWith('检测到重复调用循环')
+      ) {
+        doomLoopIntervened = true;
+      }
+      deps.dispatchEvent(event);
+    };
 
     const results = await executeToolCalls(outcome.toolCalls, {
       registry,
       cwd: deps.cwd,
       signal: deps.signal,
-      dispatchEvent: deps.dispatchEvent,
+      dispatchEvent: observeDoomLoop,
       permission: deps.permission,
       doomLoop,
       hooks: deps.hooks,
@@ -288,6 +321,21 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
         message.isError = true;
       }
       pushMessage(message);
+    }
+    if (!doomLoopIntervened) {
+      // ToolCallOutcome.input 已被 scheduler 做过 JSON.parse（失败时为原始字符串），
+      // schema 解析失败/未知工具经 isReadOnly 落空，均按非只读处理
+      const steer = stallGuard.recordStep(
+        results.map(({ toolCall, input }) => ({
+          name: toolCall.name,
+          input,
+          isReadOnly: registry.get(toolCall.name)?.isReadOnly(input) ?? false,
+        })),
+        results.map(({ result }) => result.output),
+      );
+      if (steer !== null) {
+        pushMessage({ role: 'user', content: steer });
+      }
     }
   }
 }

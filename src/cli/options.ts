@@ -7,6 +7,7 @@ export interface CliOptions {
   mode?: PermissionMode;
   fallback?: string[];
   print?: string;
+  outputFormat?: 'text' | 'stream-json';
   continue?: boolean;
   resume?: string | boolean;
 }

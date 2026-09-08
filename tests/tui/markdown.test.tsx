@@ -276,7 +276,7 @@ describe('Markdown 组件 ANSI 输出', () => {
       );
       expect(output).not.toContain('38;2;');
       expect(output).not.toContain('48;2;');
-      expect(output).toContain('\x1b[34m'); // heading = blue
+      expect(output).toContain('\x1b[33m'); // heading = yellow
       expect(output).toContain('\x1b[40m'); // codeBlockBg = black
       expect(output).toContain('标题');
     });
@@ -286,12 +286,13 @@ describe('Markdown 组件 ANSI 输出', () => {
 describe('MessageList：用户消息色条 + assistant markdown', () => {
   const userBlock: UiBlock = { id: 1, kind: 'user', text: '你好' };
 
-  it('narrow 模式：▍ 色条前缀（userMarker 色）+ userText 正文', () => {
+  it('narrow 模式：❯ 前缀（userMarker 色）+ userText 正文', () => {
     setThemeForTests(rich);
     setTerminalWidthModeForTests('narrow');
     withChalkLevel(3, () => {
       const output = renderToString(<MessageList blocks={[userBlock]} />);
-      expect(output).toContain('▍ 你好');
+      expect(output).toContain('❯ ');
+      expect(output).toContain('你好');
       expect(output).toContain(hexToSgr(rich.userMarker));
       expect(output).toContain(hexToSgr(rich.userText));
     });
@@ -302,14 +303,14 @@ describe('MessageList：用户消息色条 + assistant markdown', () => {
     setTerminalWidthModeForTests('legacy-cjk');
     const output = renderToString(<MessageList blocks={[userBlock]} />);
     expect(output).toContain('> 你好');
-    expect(output).not.toContain('▍');
+    expect(output).not.toContain('❯');
   });
 
   it('多行用户消息：续行两格缩进对齐', () => {
     setTerminalWidthModeForTests('narrow');
     const block: UiBlock = { id: 1, kind: 'user', text: '第一行\n第二行' };
     const output = renderToString(<MessageList blocks={[block]} />);
-    expect(output).toContain('▍ 第一行');
+    expect(output).toContain('❯ 第一行');
     expect(output).toContain('  第二行');
   });
 
@@ -379,7 +380,7 @@ describe('ApprovalDialog：diff 着色与键位提示', () => {
       const output = renderToString(
         <ApprovalDialog request={editRequest} cwd={process.cwd()} onReply={() => {}} />,
       );
-      expect(output).toContain('1 Yes | 2 不再询问 | 3 拒绝');
+      expect(output).toContain('esc reject');
     });
   });
 

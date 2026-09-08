@@ -515,11 +515,11 @@ export function createAgentTool(host: AgentToolHost): Tool {
     accesses: () => [{ kind: 'read' }],
     describeCall: (input) => {
       if (input.tasks !== undefined && input.tasks.length > 0) {
-        return `Agent(并行 ${input.tasks.length} 任务) ${input.tasks[0]!.description} 等`;
+        return `Agent(×${input.tasks.length} parallel) ${input.tasks[0]!.description} …`;
       }
       const type = input.subagent_type ?? '?';
       const label = input.description ?? '';
-      return input.run_in_background === true ? `Agent(后台 ${type}) ${label}` : `Agent(${type}) ${label}`;
+      return input.run_in_background === true ? `Agent(bg ${type}) ${label}` : `Agent(${type}) ${label}`;
     },
     call: async (input, ctx) => {
       // tasks 非空 → 批量模式（忽略单发字段）；否则单发模式，三字段缺一不可

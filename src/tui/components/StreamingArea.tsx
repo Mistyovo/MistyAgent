@@ -7,12 +7,12 @@ import { completeLinesOnly } from '../controllers/stream-utils';
 import { getTerminalWidthMode, useTerminalTextWrap } from '../terminal-text';
 import { getTheme } from '../theme';
 
-const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+/** Claude Code 风格 spinner 帧；老式 Windows 控制台（GBK 点阵）对这类字符支持差，回退 ASCII */
+const CLAUDE_FRAMES = ['✻', '✽', '✶', '✳'];
 const ASCII_FRAMES = ['-', '\\', '|', '/'];
 
-/** 老式 Windows 控制台（GBK 点阵）对 braille 字符支持差，回退 ASCII；模式判定与 terminal-text 统一 */
 function spinnerFrames(): string[] {
-  return getTerminalWidthMode() === 'legacy-cjk' ? ASCII_FRAMES : BRAILLE_FRAMES;
+  return getTerminalWidthMode() === 'legacy-cjk' ? ASCII_FRAMES : CLAUDE_FRAMES;
 }
 
 function Spinner({ label }: { label: string }) {
@@ -22,12 +22,18 @@ function Spinner({ label }: { label: string }) {
   useEffect(() => {
     const timer = setInterval(() => {
       setIndex((current) => (current + 1) % frames.length);
-    }, 80);
+    }, 120);
     return () => {
       clearInterval(timer);
     };
   }, [frames.length]);
-  return <Text color={theme.spinner}>{`${frames[index % frames.length] ?? ''} ${label}`}</Text>;
+  return (
+    <Text>
+      <Text color={theme.spinner}>{frames[index % frames.length] ?? ''}</Text>
+      <Text dimColor>{` ${label}`}</Text>
+      <Text dimColor>{'  · esc to interrupt'}</Text>
+    </Text>
+  );
 }
 
 /**

@@ -32,8 +32,8 @@ export function createEnterPlanModeTool(host?: PlanModeHost): Tool {
     accesses: () => [{ kind: 'execute' }],
     describeCall: (input) =>
       input.reason !== undefined && input.reason !== ''
-        ? `进入计划模式：${input.reason}`
-        : '进入计划模式',
+        ? `Enter plan mode: ${input.reason}`
+        : 'Enter plan mode',
     call: () => {
       if (host === undefined) {
         return Promise.resolve({ output: '当前环境不支持计划模式（无会话状态）。', isError: true });
@@ -70,7 +70,7 @@ export function createExitPlanModeTool(host?: PlanModeHost): Tool {
     accesses: () => [{ kind: 'execute' }],
     describeCall: (input) => {
       const firstLine = input.plan.split('\n')[0] ?? '';
-      return `提交计划：${firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine}`;
+      return `Submit plan: ${firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine}`;
     },
     call: async (input, ctx) => {
       if (host === undefined) {

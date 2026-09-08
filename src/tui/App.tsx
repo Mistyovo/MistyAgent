@@ -19,7 +19,7 @@ import { StreamingArea } from './components/StreamingArea';
 import { TodoList } from './components/TodoList';
 import type { PendingDialog } from './controllers/session-reducer';
 import { useSessionController } from './controllers/session-events';
-import { useTerminalTextWrap } from './terminal-text';
+import { getTerminalWidthMode, useTerminalTextWrap } from './terminal-text';
 import { getTheme } from './theme';
 
 export interface AppProps {
@@ -41,21 +41,42 @@ export interface AppProps {
 
 const EXIT_ARM_MS = 3000;
 
-/** 空会话欢迎头（启动值快照，不随 turn 内 fallback/模式切换更新）。
- *  只能渲染在动态区：ink 单棵树只支持一个 Static（被消息区占用），
- *  Static 内容恒在动态区之上——常驻 banner 会被夹到消息历史与流式区之间，
- *  因此 banner 随空态一起退场。 */
+/**
+ * 空会话欢迎头（启动值快照，不随 turn 内 fallback/模式切换更新）。
+ * 只能渲染在动态区：ink 单棵树只支持一个 Static（被消息区占用），
+ * Static 内容恒在动态区之上——常驻 banner 会被夹到消息历史与流式区之间，
+ * 因此 banner 随空态一起退场。
+ * 块状 logo 只在 narrow 终端渲染（█ 是歧义宽字符，legacy-cjk 按 2 格
+ * 渲染会撑歪比例），legacy-cjk 回退纯文本 wordmark。
+ */
+const LOGO_LINES = [
+  '█   █  █  ███  █████  █   █',
+  '██ ██  █  █       █     █ █ ',
+  '█ █ █  █   ███    █      █  ',
+  '█   █  █       █  █      █  ',
+  '█   █  █  ███  ███     █  ',
+];
+
 function WelcomeBanner({ model, mode }: { model: string; mode: PermissionMode }) {
   const theme = getTheme();
   const wrap = useTerminalTextWrap();
   const meta = permissionModeMeta[mode];
+  const narrow = getTerminalWidthMode() === 'narrow';
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold color={theme.accent}>
-        Misty
-      </Text>
+      {narrow ? (
+        LOGO_LINES.map((line, index) => (
+          <Text key={index} bold color={theme.accent}>
+            {line}
+          </Text>
+        ))
+      ) : (
+        <Text bold color={theme.accent}>
+          Misty
+        </Text>
+      )}
       <Text dimColor>
-        {wrap(`${model} · ${meta.symbol} ${meta.label} · Shift+Tab 切换权限模式 · /help 查看命令`)}
+        {wrap(`${model} · ${meta.symbol} ${meta.label} · /help for commands`)}
       </Text>
     </Box>
   );
@@ -78,12 +99,14 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager, m
     useSessionController(session, registry);
   const [model, setModel] = useState(initialModel);
   const [mode, setMode] = useState<PermissionMode>(() => session.getPermissionMode());
+  const [contextUsage, setContextUsage] = useState<{ estimatedTokens: number; limit: number } | null>(
+    null,
+  );
   const [exitArmed, setExitArmed] = useState(false);
   const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const busy = state.streaming.active;
   const dialog = state.pendingDialogs[0] ?? null;
-  const wrap = useTerminalTextWrap();
   const emptySession = state.blocks.length === 0;
 
   /** 弹窗期间 Ctrl+C 的"按拒绝关闭"：与弹窗各自 Esc 的语义一致（审批=拒绝，提问=跳过，计划批准=拒绝） */
@@ -101,7 +124,8 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager, m
   };
 
   // 计划模式进/退可由模型工具在 turn 内触发（权限模式随之切换），状态栏经事件同步；
-  // 模型 fallback 仅当前 turn 生效（session 模型不变），状态栏跟随事件，turn 结束回读主模型
+  // 模型 fallback 仅当前 turn 生效（session 模型不变），状态栏跟随事件，turn 结束回读主模型。
+  // 上下文用量在消息数变化的边界事件上重算（每步一次，不在 delta 帧里跑全量估算）。
   useEffect(
     () =>
       session.onEvent((event) => {
@@ -113,6 +137,14 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager, m
         }
         if (event.type === 'turn-complete') {
           setModel(session.getModel());
+        }
+        if (
+          event.type === 'turn-started' ||
+          event.type === 'step-finished' ||
+          event.type === 'compacted' ||
+          event.type === 'context-pruned'
+        ) {
+          setContextUsage(session.getContextUsage());
         }
       }),
     [session],
@@ -230,7 +262,6 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager, m
           }}
         />
       )}
-      {emptySession && <Text dimColor>{wrap('输入消息开始，/help 查看命令')}</Text>}
       <PromptInput
         busy={busy}
         queuedCount={state.queuedCount}
@@ -243,6 +274,7 @@ export function App({ session, registry, model: initialModel, cwd, mcpManager, m
         model={model}
         mode={mode}
         usage={state.lastUsage}
+        contextUsage={contextUsage}
         busy={busy}
         runningTasks={state.runningTasks}
         exitArmed={exitArmed}

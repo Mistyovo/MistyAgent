@@ -1,11 +1,13 @@
 import { useState } from 'react';
 
-import { Box, Text, useInput } from 'ink';
+import { Text, useInput } from 'ink';
 
 import type { QuestionReply, QuestionRequest } from '#/core/question';
 
 import { useTerminalTextWrap } from '../terminal-text';
 import { getTheme } from '../theme';
+
+import { DialogFrame, DialogOption } from './DialogFrame';
 
 export interface QuestionDialogProps {
   request: QuestionRequest;
@@ -15,8 +17,7 @@ export interface QuestionDialogProps {
 /**
  * 提问弹窗：数字键 1-4 直选（多选时等效空格勾选），↑/↓ 移动高亮；
  * 单选 Enter 直接确认，多选 Enter 确认所有勾选项；Esc 跳过（cancelled）。
- * 布局约束与 ApprovalDialog 一致（classic 边框、去右边框、内容过 wrap），
- * 理由见其实现注释（老式 conhost 歧义宽字符与 eraseLines 行数恒等）。
+ * 布局与宽度约束见 DialogFrame（边框按终端宽度模式选型、内容过 wrap）。
  */
 export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
   const multi = request.multiSelect === true;
@@ -85,23 +86,12 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
   });
 
   const hint = multi
-    ? '↑↓ 移动 · 空格/1-4 勾选 · Enter 确认 · Esc 跳过'
-    : '↑↓ 移动 · 1-4 直选 · Enter 确认 · Esc 跳过';
+    ? '↑/↓ move · space/1-4 toggle · enter confirm · esc skip'
+    : '↑/↓ move · 1-4 select · enter confirm · esc skip';
   const theme = getTheme();
   // 问题与选项文案来自模型（上游不可控），一律 sanitize+物理折行后上屏
   return (
-    <Box
-      flexDirection="column"
-      alignSelf="flex-start"
-      borderStyle="classic"
-      borderColor={theme.accent}
-      borderRight={false}
-      paddingX={1}
-      marginTop={1}
-    >
-      <Text bold color={theme.accent}>
-        {wrap(`提问：${request.question}`, 3)}
-      </Text>
+    <DialogFrame title={request.question} color={theme.accent}>
       {options.map((option, index) => {
         const mark = multi ? (checked.has(index) ? '[x] ' : '[ ] ') : '';
         const description =
@@ -109,12 +99,15 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
             ? ` — ${option.description}`
             : '';
         return (
-          <Text key={`${index}:${option.label}`} {...(index === selection ? { color: theme.accent } : {})}>
-            {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${mark}${option.label}${description}`, 3)}
-          </Text>
+          <DialogOption
+            key={`${index}:${option.label}`}
+            selected={index === selection}
+            index={index}
+            label={`${mark}${option.label}${description}`}
+          />
         );
       })}
       <Text dimColor>{wrap(hint, 3)}</Text>
-    </Box>
+    </DialogFrame>
   );
 }

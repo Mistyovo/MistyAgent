@@ -12,37 +12,56 @@ import { Markdown } from './Markdown';
 
 const OUTPUT_PREVIEW_LINES = TOOL_OUTPUT_PREVIEW_LINES;
 
+/** ⏺（U+23FA）与 ⎿（U+23BF）在 legacy-cjk 终端按 2 格渲染，回退 ASCII 形态 */
+function toolBullet(): string {
+  return getTerminalWidthMode() === 'legacy-cjk' ? '*' : '⏺';
+}
+
+function resultPrefix(): string {
+  return getTerminalWidthMode() === 'legacy-cjk' ? '>' : '⎿';
+}
+
+/** Claude Code 风格的时长：秒为主单位，亚秒保留 ms */
+function formatDuration(durationMs: number): string {
+  return durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`;
+}
+
 function ToolBlockView({ block }: { block: ToolBlock }) {
   const wrap = useTerminalTextWrap();
   const theme = getTheme();
-  const head =
-    block.status === 'running'
-      ? { color: theme.warning, suffix: ' …' }
-      : block.isError
-        ? { color: theme.error, suffix: '（失败）' }
-        : { color: theme.toolHead, suffix: block.durationMs === null ? '' : `（${block.durationMs}ms）` };
+  const bullet = toolBullet();
   const output = block.output ?? '';
   const lines = output.split('\n');
   const preview = lines.slice(0, OUTPUT_PREVIEW_LINES);
   const hidden = lines.length - preview.length;
   return (
     <Box flexDirection="column">
-      <Text color={head.color}>
-        {wrap(`⏵ ${block.description}${head.suffix}`)}
-      </Text>
+      {block.status === 'running' ? (
+        <Text color={theme.accent}>{wrap(`${bullet} ${block.description} …`)}</Text>
+      ) : (
+        <Text color={block.isError ? theme.error : theme.toolHead}>
+          {wrap(`${bullet} ${block.description}`, 4)}
+          {block.durationMs !== null && (
+            <Text dimColor>{` (${formatDuration(block.durationMs)}${block.isError ? ', failed' : ''})`}</Text>
+          )}
+        </Text>
+      )}
       {block.status === 'done' && output !== '' && (
         <Box flexDirection="column" marginLeft={2}>
           {preview.map((line, index) => (
-            <Text key={index} {...(block.isError ? { color: theme.error } : { dimColor: true })}>
-              {wrap(line, 2)}
+            <Text
+              key={index}
+              {...(block.isError ? { color: theme.error } : { dimColor: true })}
+            >
+              {wrap(index === 0 ? `${resultPrefix()} ${line}` : `  ${line}`, 2)}
             </Text>
           ))}
           {hidden > 0 && (
             <Text dimColor>
               {wrap(
                 block.outputFile === null
-                  ? `… 还有 ${hidden} 行`
-                  : `… 还有 ${hidden} 行，完整输出: ${block.outputFile}`,
+                  ? `${resultPrefix()} … +${hidden} lines`
+                  : `${resultPrefix()} … +${hidden} lines  ${block.outputFile}`,
                 2,
               )}
             </Text>
@@ -58,13 +77,13 @@ function BlockView({ block }: { block: UiBlock }) {
   const theme = getTheme();
   switch (block.kind) {
     case 'user': {
-      // 左侧色条风格：老式 conhost 把 ▍ 按 2 格渲染且观感差，回退 '>'；前缀恒占 2 格
-      const marker = getTerminalWidthMode() === 'legacy-cjk' ? '>' : '▍';
+      // ❯ 前缀 + 加粗正文（对齐 Claude Code）；legacy-cjk 下 ❯ 物理占 2 格，回退 '>'
+      const marker = getTerminalWidthMode() === 'legacy-cjk' ? '>' : '❯';
       const lines = wrap(block.text, 2).split('\n');
       return (
         <Box flexDirection="column">
           {lines.map((line, index) => (
-            <Text key={index} color={theme.userText}>
+            <Text key={index} bold color={theme.userText}>
               {index === 0 ? <Text color={theme.userMarker}>{`${marker} `}</Text> : '  '}
               {line}
             </Text>
@@ -92,7 +111,7 @@ function BlockView({ block }: { block: UiBlock }) {
     case 'error':
       return <Text color={theme.error}>{wrap(`✗ ${block.message}`)}</Text>;
     case 'notice':
-      return <Text dimColor>{wrap(`— ${block.text}`)}</Text>;
+      return <Text dimColor>{wrap(`· ${block.text}`)}</Text>;
   }
 }
 

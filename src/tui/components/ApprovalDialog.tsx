@@ -8,6 +8,8 @@ import { describeRule, extractCommand, extractPath } from '#/core/permission/rul
 import { useTerminalTextWrap } from '../terminal-text';
 import { getTheme, type Theme } from '../theme';
 
+import { DialogFrame, DialogOption } from './DialogFrame';
+
 export interface ApprovalDialogProps {
   request: ApprovalRequest;
   cwd: string;
@@ -28,7 +30,7 @@ function limitLines(lines: string[]): string[] {
   if (lines.length <= MAX_DETAIL_LINES) {
     return lines;
   }
-  return [...lines.slice(0, MAX_DETAIL_LINES), `…（共 ${lines.length} 行，已截断）`];
+  return [...lines.slice(0, MAX_DETAIL_LINES), `… (${lines.length} lines, truncated)`];
 }
 
 /** 审批详情：bash 显示命令；write 显示路径+内容预览；edit 显示路径+old/new 预览；其余 JSON */
@@ -44,7 +46,7 @@ export function approvalDetailLines(request: ApprovalRequest): string[] {
   if (request.toolName === 'write') {
     const content = stringField(input, 'content');
     if (path !== null && content !== null) {
-      return [`路径：${path}`, ...limitLines(content.split('\n'))];
+      return [`path: ${path}`, ...limitLines(content.split('\n'))];
     }
   }
   if (request.toolName === 'edit') {
@@ -52,7 +54,7 @@ export function approvalDetailLines(request: ApprovalRequest): string[] {
     const newText = stringField(input, 'new_string');
     if (path !== null && oldText !== null && newText !== null) {
       return [
-        `路径：${path}`,
+        `path: ${path}`,
         ...limitLines([
           ...oldText.split('\n').map((line) => `- ${line}`),
           ...newText.split('\n').map((line) => `+ ${line}`),
@@ -89,8 +91,9 @@ function diffLineColor(toolName: string, line: string, theme: Theme): string | n
 }
 
 /**
- * 审批弹窗：数字键 1/2/3 直接选择，←/→ 移动高亮，Enter 确认，Esc 拒绝。
- * 'always' 选项复用 M3 的 sessionRuleFor 展示会话级放行规则的粒度。
+ * 审批弹窗（对齐 Claude Code 的权限确认样式）：数字键 1/2/3 直接选择，
+ * ←/→ 移动高亮，Enter 确认，Esc 拒绝。'always' 选项复用 sessionRuleFor
+ * 展示会话级放行规则的粒度。
  */
 export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   const options: Option[] = [
@@ -99,7 +102,7 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
       decision: 'always',
       label: `Yes, and don't ask again for ${describeRule(sessionRuleFor(request, cwd))}`,
     },
-    { decision: 'reject', label: 'No' },
+    { decision: 'reject', label: 'No, and tell Misty what to do differently (esc)' },
   ];
   const [selection, setSelection] = useState(0);
 
@@ -133,30 +136,9 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
 
   const detail = approvalDetailLines(request);
   const theme = getTheme();
-  // 内容宽度预算：左边框 1 格 + paddingX 左 1 格 + 1 格余量，reserve 3。
-  // 命令/路径/文件内容都是上游不可控文本，sanitize+物理折行后才能进动态区。
   const wrap = useTerminalTextWrap();
-  // 边框用 classic（ASCII + - |）：round/single 的 ─│╭ 等是 East Asian Ambiguous
-  // 字符，在中文 cmd.exe 老式 conhost 按 2 格渲染，长内容时边框行物理换行，
-  // 与 ink 行高预算错位会导致 eraseLines 残帧。
-  // alignSelf flex-start：列容器里 Box 默认 stretch 到父宽（= 终端列数），
-  // 满宽边框行在老式 conhost 立即折行 → 宽度收缩到内容。
-  // borderRight 关闭：有右边框时短内容行会被 padding 空格撑到盒宽再跟 '|'，
-  // 行内歧义字符（…… 等）的物理加宽把 '|' 推过列边界 → 物理折行。去掉右边框后
-  // 行尾空格被 trimEnd，物理行宽只取决于内容本身。
   return (
-    <Box
-      flexDirection="column"
-      alignSelf="flex-start"
-      borderStyle="classic"
-      borderColor={theme.warning}
-      borderRight={false}
-      paddingX={1}
-      marginTop={1}
-    >
-      <Text bold color={theme.warning}>
-        {wrap(`需要审批：${request.describeCall}`, 3)}
-      </Text>
+    <DialogFrame title={`Permission needed: ${request.describeCall}`} color={theme.warning}>
       <Text dimColor>{wrap(request.reason, 3)}</Text>
       {detail.length > 0 && (
         <Box flexDirection="column">
@@ -171,11 +153,14 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
         </Box>
       )}
       {options.map((option, index) => (
-        <Text key={option.decision} {...(index === selection ? { color: theme.accent } : {})}>
-          {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
-        </Text>
+        <DialogOption
+          key={option.decision}
+          selected={index === selection}
+          index={index}
+          label={option.label}
+        />
       ))}
-      <Text dimColor>{wrap('1 Yes | 2 不再询问 | 3 拒绝', 3)}</Text>
-    </Box>
+      <Text dimColor>{wrap('←/→ move · 1-3 select · enter confirm · esc reject', 3)}</Text>
+    </DialogFrame>
   );
 }

@@ -62,7 +62,12 @@ function normalizeUsage(usage: ChatCompletionChunk['usage']): TokenUsage | null 
   if (usage === undefined || usage === null) {
     return null;
   }
-  return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
+  const cached = usage.prompt_tokens_details?.cached_tokens;
+  return {
+    inputTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
+    ...(typeof cached === 'number' && cached > 0 ? { cachedInputTokens: cached } : {}),
+  };
 }
 
 const CONTEXT_OVERFLOW_MESSAGE_PATTERN =

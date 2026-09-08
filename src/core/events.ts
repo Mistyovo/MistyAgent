@@ -110,6 +110,14 @@ export interface CompactedEvent {
   afterTokens: number;
 }
 
+/** 微压缩完成（修剪保护窗口外的旧工具输出，无 LLM 调用）后发出 */
+export interface ContextPrunedEvent {
+  type: 'context-pruned';
+  prunedCount: number;
+  beforeTokens: number;
+  afterTokens: number;
+}
+
 /**
  * 主模型失败后自动切换到 fallbackModels 链上的下一个模型时发出；
  * 仅当前 turn 生效，新 turn 从主模型重新开始
@@ -174,6 +182,7 @@ export type AgentEvent =
   | PlanApprovalRequestedEvent
   | PlanModeChangedEvent
   | CompactedEvent
+  | ContextPrunedEvent
   | ModelFallbackEvent
   | TodosUpdatedEvent
   | TaskStartedEvent

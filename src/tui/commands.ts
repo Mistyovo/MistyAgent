@@ -38,83 +38,83 @@ export interface SlashCommand {
 
 const help: SlashCommand = {
   name: 'help',
-  description: '列出可用命令',
+  description: 'List available commands',
   usage: '/help',
   execute: (_args, ctx) => {
     const lines = slashCommands.map((command) => `  ${command.usage} — ${command.description}`);
-    ctx.notice(['可用命令：', ...lines].join('\n'));
+    ctx.notice(['Commands:', ...lines].join('\n'));
   },
 };
 
 const clear: SlashCommand = {
   name: 'clear',
-  description: '清屏并开始新会话',
+  description: 'Clear screen and start a new session',
   usage: '/clear',
   execute: (_args, ctx) => {
     if (ctx.busy) {
-      ctx.notice('turn 进行中，无法清屏；先 Esc 中断当前 turn');
+      ctx.notice('Turn in progress, cannot clear; press Esc to interrupt first');
       return;
     }
     ctx.onNewSession?.();
     ctx.session.newSession();
     ctx.clearBlocks();
-    ctx.notice('已开始新会话');
+    ctx.notice('Started a new session');
   },
 };
 
 const model: SlashCommand = {
   name: 'model',
-  description: '切换模型（仅运行时生效，不改配置文件）',
+  description: 'Switch model (runtime only, not persisted to config)',
   usage: '/model <name>',
   execute: (args, ctx) => {
     if (args === '') {
-      ctx.notice(`当前模型：${ctx.session.getModel()}`);
+      ctx.notice(`Current model: ${ctx.session.getModel()}`);
       return;
     }
     ctx.setModel(args);
-    ctx.notice(`已切换模型：${args}`);
+    ctx.notice(`Model switched: ${args}`);
   },
 };
 
 const mode: SlashCommand = {
   name: 'mode',
-  description: '切换权限模式（无参数时显示当前模式）',
+  description: 'Switch permission mode (show current when no argument)',
   usage: `/mode <${permissionModeSchema.options.join('|')}>`,
   execute: (args, ctx) => {
     if (args === '') {
-      ctx.notice(`当前权限模式：${ctx.session.getPermissionMode()}`);
+      ctx.notice(`Current permission mode: ${ctx.session.getPermissionMode()}`);
       return;
     }
     const parsed = permissionModeSchema.safeParse(args);
     if (!parsed.success) {
-      ctx.notice(`无效模式：${args}（可选：${permissionModeSchema.options.join(', ')}）`);
+      ctx.notice(`Invalid mode: ${args} (valid: ${permissionModeSchema.options.join(', ')})`);
       return;
     }
     ctx.setMode(parsed.data);
-    ctx.notice(`已切换权限模式：${parsed.data}`);
+    ctx.notice(`Permission mode switched: ${parsed.data}`);
   },
 };
 
 const compact: SlashCommand = {
   name: 'compact',
-  description: '手动压缩上下文历史',
+  description: 'Manually compact context history',
   usage: '/compact',
   execute: async (_args, ctx) => {
     if (ctx.busy) {
-      ctx.notice('turn 进行中，无法压缩；先 Esc 中断当前 turn');
+      ctx.notice('Turn in progress, cannot compact; press Esc to interrupt first');
       return;
     }
     const compacted = await ctx.session.compactNow();
     // 成功时 session 会 dispatch compacted 事件，reducer 落提示块
     if (!compacted) {
-      ctx.notice('历史太短或摘要生成失败，未压缩');
+      ctx.notice('History too short or summary failed; nothing compacted');
     }
   },
 };
 
 const exit: SlashCommand = {
   name: 'exit',
-  description: '退出 misty',
+  description: 'Quit misty',
   usage: '/exit',
   execute: (_args, ctx) => {
     ctx.exit();
@@ -123,32 +123,32 @@ const exit: SlashCommand = {
 
 const mcp: SlashCommand = {
   name: 'mcp',
-  description: '列出 MCP server 连接状态与工具数',
+  description: 'List MCP server connection status and tool counts',
   usage: '/mcp',
   execute: (_args, ctx) => {
     const statuses = ctx.mcpServers?.() ?? [];
     if (statuses.length === 0) {
-      ctx.notice('未配置 MCP server（在 settings.json 的 mcpServers 字段中配置）');
+      ctx.notice('No MCP servers configured (set mcpServers in settings.json)');
       return;
     }
     const lines = statuses.map((status) => {
       if (status.state === 'connected') {
-        return `  ✓ ${status.name} — 已连接，${status.toolCount} 个工具`;
+        return `  ✓ ${status.name} — connected, ${status.toolCount} tools`;
       }
-      const label = status.state === 'failed' ? '连接失败' : '已断开';
-      return `  ✗ ${status.name} — ${label}${status.error === undefined ? '' : `：${status.error}`}`;
+      const label = status.state === 'failed' ? 'failed' : 'disconnected';
+      return `  ✗ ${status.name} — ${label}${status.error === undefined ? '' : `: ${status.error}`}`;
     });
-    ctx.notice(['MCP servers：', ...lines].join('\n'));
+    ctx.notice(['MCP servers:', ...lines].join('\n'));
   },
 };
 
 const memory: SlashCommand = {
   name: 'memory',
-  description: '查看记忆目录与当前索引',
+  description: 'Show memory directory and current index',
   usage: '/memory',
   execute: (_args, ctx) => {
     if (ctx.memoryInfo === undefined) {
-      ctx.notice('记忆未开启（settings.json 设 memory: true）');
+      ctx.notice('Memory is disabled (set "memory": true in settings.json)');
       return;
     }
     ctx.notice(ctx.memoryInfo());
@@ -157,12 +157,14 @@ const memory: SlashCommand = {
 
 const skills: SlashCommand = {
   name: 'skills',
-  description: '列出已加载的技能',
+  description: 'List loaded skills',
   usage: '/skills',
   execute: (_args, ctx) => {
     const info = ctx.skillsInfo?.() ?? '';
     if (info === '') {
-      ctx.notice('未加载任何 skill（在 ~/.misty/skills/<name>/SKILL.md 或 .misty/skills/<name>/SKILL.md 创建）');
+      ctx.notice(
+        'No skills loaded (create ~/.misty/skills/<name>/SKILL.md or .misty/skills/<name>/SKILL.md)',
+      );
       return;
     }
     ctx.notice(info);
@@ -171,15 +173,15 @@ const skills: SlashCommand = {
 
 const rewind: SlashCommand = {
   name: 'rewind',
-  description: '列出文件改动检查点，或回滚到指定检查点',
+  description: 'List file-change checkpoints, or roll back to one',
   usage: '/rewind [id]',
   execute: (args, ctx) => {
     if (ctx.rewind === undefined) {
-      ctx.notice('检查点不可用');
+      ctx.notice('Checkpoints unavailable');
       return;
     }
     if (args === '') {
-      ctx.notice(`${ctx.rewind()}\n/rewind <id> 回滚到该检查点`);
+      ctx.notice(`${ctx.rewind()}\n/rewind <id> to roll back`);
       return;
     }
     ctx.notice(ctx.rewind(args));
@@ -203,12 +205,12 @@ export async function runSlashCommand(text: string, ctx: CommandContext): Promis
   const args = spaceIndex === -1 ? '' : body.slice(spaceIndex + 1).trim();
   const command = slashCommands.find((candidate) => candidate.name === name);
   if (command === undefined) {
-    ctx.notice(`未知命令：/${name}（/help 查看可用命令）`);
+    ctx.notice(`Unknown command: /${name} (/help for commands)`);
     return;
   }
   try {
     await command.execute(args, ctx);
   } catch (error) {
-    ctx.notice(`命令 /${name} 执行失败：${errorMessage(error)}`);
+    ctx.notice(`Command /${name} failed: ${errorMessage(error)}`);
   }
 }

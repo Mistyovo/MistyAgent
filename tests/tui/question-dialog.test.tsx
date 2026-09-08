@@ -35,12 +35,12 @@ describe('QuestionDialog', () => {
   it('渲染：问题、选项（含描述）与单选提示上屏', () => {
     const { lastFrame } = mountDialog(makeRequest());
     const frame = lastFrame()!;
-    expect(frame).toContain('提问：选哪个方案？');
+    expect(frame).toContain('选哪个方案？');
     expect(frame).toContain('1. 甲 — 保守路线');
     expect(frame).toContain('2. 乙');
     expect(frame).toContain('3. 丙');
-    expect(frame).toContain('1-4 直选');
-    expect(frame).toContain('Esc 跳过');
+    expect(frame).toContain('1-4 select');
+    expect(frame).toContain('esc skip');
   });
 
   it('单选：数字键直选立即确认', async () => {
@@ -85,7 +85,7 @@ describe('QuestionDialog', () => {
 
   it('多选：空格与数字键勾选，Enter 按选项顺序汇总', async () => {
     const { stdin, lastFrame, replies } = mountDialog(makeRequest({ multiSelect: true }));
-    expect(lastFrame()).toContain('空格/1-4 勾选');
+    expect(lastFrame()).toContain('space/1-4 toggle');
     stdin.write(' '); // 勾选高亮项「甲」
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('[x] 甲');

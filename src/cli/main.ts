@@ -93,9 +93,9 @@ function buildMemoryInfo(): string {
   const dir = getMemoryDir();
   const index = readMemoryIndex();
   if (index === null || index.trim() === '') {
-    return `记忆目录：${dir}\n（索引为空：还没有写入任何记忆）`;
+    return `Memory directory: ${dir}\n(index empty: no memories written yet)`;
   }
-  return `记忆目录：${dir}\n\n${index.trim()}`;
+  return `Memory directory: ${dir}\n\n${index.trim()}`;
 }
 
 /** /skills 上屏内容：每行 name — description（标来源层级）；无技能返回空串 */
@@ -103,26 +103,26 @@ function buildSkillsInfo(skills: readonly SkillDefinition[]): string {
   if (skills.length === 0) {
     return '';
   }
-  const sourceLabel = { user: '用户级', project: '项目级', bundled: '内置' } as const;
+  const sourceLabel = { user: 'user', project: 'project', bundled: 'built-in' } as const;
   const lines = skills.map(
-    (skill) => `  ${skill.name} — ${skill.description}（${sourceLabel[skill.source]}）`,
+    (skill) => `  ${skill.name} — ${skill.description} (${sourceLabel[skill.source]})`,
   );
-  return ['已加载技能：', ...lines].join('\n');
+  return ['Loaded skills:', ...lines].join('\n');
 }
 
 /** /rewind 无参上屏：检查点清单（id、时间、触发文本、改动文件数） */
 function buildCheckpointList(store: CheckpointStore): string {
   const checkpoints = store.list();
   if (checkpoints.length === 0) {
-    return '没有可回滚的检查点';
+    return 'No rewindable checkpoints';
   }
   const lines = checkpoints.map((checkpoint) => {
     const time = new Date(checkpoint.createdAt).toLocaleTimeString();
     const text = checkpoint.userText.replaceAll('\n', ' ');
     const shown = text.length > 50 ? `${text.slice(0, 50)}…` : text;
-    return `  ${checkpoint.id}  ${time}  ${shown}（改动 ${checkpoint.files.length} 个文件）`;
+    return `  ${checkpoint.id}  ${time}  ${shown} (${checkpoint.files.length} files)`;
   });
-  return ['可回滚的检查点：', ...lines].join('\n');
+  return ['Rewindable checkpoints:', ...lines].join('\n');
 }
 
 /** /rewind 回调：无 id 列清单，有 id 回滚并描述结果（还原改动文件、删除 turn 内新建文件） */
@@ -132,13 +132,13 @@ function rewindCheckpoints(store: CheckpointStore, id?: string): string {
   }
   const parsed = Number.parseInt(id, 10);
   if (Number.isNaN(parsed)) {
-    return `无效的检查点 id：${id}`;
+    return `Invalid checkpoint id: ${id}`;
   }
   const result = store.rewind(parsed);
   if ('error' in result) {
     return result.error;
   }
-  return `已回滚到检查点 ${parsed}：还原 ${result.restored.length} 个文件，删除 ${result.deleted.length} 个新建文件`;
+  return `Rolled back to checkpoint ${parsed}: restored ${result.restored.length} files, deleted ${result.deleted.length} created files`;
 }
 
 function formatSessionLine(session: SessionSummary): string {
@@ -330,7 +330,14 @@ async function action(options: CliOptions): Promise<void> {
   if (options.print !== undefined) {
     // stdin 被管道/重定向时拼接到 prompt（git diff | misty -p "review"）；TTY 时原样
     const prompt = await resolvePrintPrompt(options.print);
-    const code = await runPrintMode({ session, registry, prompt, tasks: taskManager });
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt,
+      tasks: taskManager,
+      outputFormat: options.outputFormat,
+      cwd,
+    });
     await mcpManager?.close();
     await flushStreams();
     exitProcess(code);
@@ -379,6 +386,12 @@ program
     new Option('--mode <mode>', '权限模式').choices(permissionModeSchema.options),
   )
   .option('-p, --print <prompt>', '无头模式：执行一个 prompt，文本流式输出到 stdout 后退出')
+  .addOption(
+    new Option(
+      '--output-format <format>',
+      '无头模式输出格式：text（人类可读）或 stream-json（stdout 为 NDJSON 事件流）',
+    ).choices(['text', 'stream-json']),
+  )
   .option('-c, --continue', '恢复当前目录最近一次会话')
   .option('--resume [sessionId]', '恢复指定会话；不带参数时列出候选（多个时选其一）')
   .action((options: CliOptions) => action(options));

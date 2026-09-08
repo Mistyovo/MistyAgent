@@ -305,13 +305,13 @@ export function reduceEvent(
         lastUsage: event.usage,
       };
       return event.stopReason === 'max-steps'
-        ? pushBlock(next, { kind: 'notice', text: `已达到最大步数（${event.steps} 步），turn 结束` })
+        ? pushBlock(next, { kind: 'notice', text: `Max steps reached (${event.steps} steps), turn ended` })
         : next;
     }
     case 'interrupted': {
       const flushed = flushStreaming(state);
       return {
-        ...pushBlock(flushed, { kind: 'notice', text: '已中断' }),
+        ...pushBlock(flushed, { kind: 'notice', text: 'Interrupted by user' }),
         streaming: { active: false, reasoning: '', text: '' },
         pendingDialogs: [],
       };
@@ -347,13 +347,20 @@ export function reduceEvent(
       return pushBlock(state, {
         kind: 'notice',
         text:
-          `已压缩上下文：${event.beforeCount} → ${event.afterCount} 条消息` +
-          `（约 ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens）`,
+          `Context compacted: ${event.beforeCount} → ${event.afterCount} messages` +
+          ` (~${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens)`,
+      });
+    case 'context-pruned':
+      return pushBlock(state, {
+        kind: 'notice',
+        text:
+          `Pruned ${event.prunedCount} stale tool outputs to reclaim context` +
+          ` (~${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens)`,
       });
     case 'model-fallback':
       return pushBlock(state, {
         kind: 'notice',
-        text: `模型 ${event.from} 失败，已切换到 ${event.to}：${event.reason}`,
+        text: `Model ${event.from} failed, switching to ${event.to}: ${event.reason}`,
       });
     case 'todos-updated':
       return { ...state, todos: event.todos };
@@ -370,10 +377,10 @@ export function reduceEvent(
         event.command.length > 60 ? `${event.command.slice(0, 60)}…` : event.command;
       const text =
         event.status === 'completed'
-          ? `task ${event.taskId} 已完成 (exit ${event.exitCode ?? 0}): ${command}`
+          ? `task ${event.taskId} completed (exit ${event.exitCode ?? 0}): ${command}`
           : event.status === 'failed'
-            ? `task ${event.taskId} 失败 (exit ${event.exitCode ?? '信号终止'}): ${command}`
-            : `task ${event.taskId} 已停止: ${command}`;
+            ? `task ${event.taskId} failed (exit ${event.exitCode ?? 'killed'}): ${command}`
+            : `task ${event.taskId} stopped: ${command}`;
       return {
         ...pushBlock(state, { kind: 'notice', text }),
         runningTasks: event.runningCount,

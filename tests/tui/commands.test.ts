@@ -52,7 +52,7 @@ describe('runSlashCommand', () => {
   it('未知命令给出提示', async () => {
     const { ctx, notices } = makeCtx();
     await runSlashCommand('/nope', ctx);
-    expect(notices[0]).toContain('未知命令：/nope');
+    expect(notices[0]).toContain('Unknown command: /nope');
   });
 
   it('/help 列出全部命令', async () => {
@@ -67,29 +67,29 @@ describe('runSlashCommand', () => {
     const { ctx, session, notices } = makeCtx();
     await runSlashCommand('/model gpt-x', ctx);
     expect(session.getModel()).toBe('gpt-x');
-    expect(notices[0]).toContain('已切换模型：gpt-x');
+    expect(notices[0]).toContain('Model switched: gpt-x');
   });
 
   it('/model 无参数显示当前模型', async () => {
     const { ctx, notices } = makeCtx();
     await runSlashCommand('/model', ctx);
-    expect(notices[0]).toContain('当前模型：fake-model');
+    expect(notices[0]).toContain('Current model: fake-model');
   });
 
   it('/mode 切换权限模式', async () => {
     const { ctx, session, notices } = makeCtx();
     await runSlashCommand('/mode plan', ctx);
     expect(session.getPermissionMode()).toBe('plan');
-    expect(notices[0]).toContain('已切换权限模式：plan');
+    expect(notices[0]).toContain('Permission mode switched: plan');
   });
 
   it('/mode 无参数显示当前模式；无效模式不切换', async () => {
     const { ctx, session, notices } = makeCtx();
     await runSlashCommand('/mode', ctx);
-    expect(notices[0]).toContain('当前权限模式：bypassPermissions');
+    expect(notices[0]).toContain('Current permission mode: bypassPermissions');
 
     await runSlashCommand('/mode yolo', ctx);
-    expect(notices[1]).toContain('无效模式：yolo');
+    expect(notices[1]).toContain('Invalid mode: yolo');
     expect(session.getPermissionMode()).toBe('bypassPermissions');
   });
 
@@ -102,7 +102,7 @@ describe('runSlashCommand', () => {
 
     expect(session.getMessages()).toHaveLength(0);
     expect(ctx.clearBlocks).toHaveBeenCalledOnce();
-    expect(notices.at(-1)).toContain('已开始新会话');
+    expect(notices.at(-1)).toContain('Started a new session');
   });
 
   it('/clear 在 turn 进行中拒绝', async () => {
@@ -114,7 +114,7 @@ describe('runSlashCommand', () => {
   it('/compact 历史太短时不压缩', async () => {
     const { ctx, notices } = makeCtx();
     await runSlashCommand('/compact', ctx);
-    expect(notices[0]).toContain('未压缩');
+    expect(notices[0]).toContain('nothing compacted');
   });
 
   it('/compact 压缩历史并触发 compacted 事件', async () => {

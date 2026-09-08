@@ -169,7 +169,7 @@ describe('reduceEvent 流式聚合', () => {
       { type: 'turn-started' },
       { type: 'turn-complete', stopReason: 'max-steps', steps: 50, usage },
     );
-    expect(state.blocks.some((b) => b.kind === 'notice' && b.text.includes('最大步数'))).toBe(true);
+    expect(state.blocks.some((b) => b.kind === 'notice' && b.text.includes('Max steps reached'))).toBe(true);
   });
 
   it('recoverable=false 的 error 结束 turn（此路径没有后续 turn-complete）', () => {
@@ -422,7 +422,7 @@ describe('后台任务事件', () => {
     const block = state.blocks[0]!;
     expect(block.kind).toBe('notice');
     if (block.kind === 'notice') {
-      expect(block.text.startsWith('task task_1 已完成 (exit 0): node build.js')).toBe(true);
+      expect(block.text.startsWith('task task_1 completed (exit 0): node build.js')).toBe(true);
       expect(block.text).toContain('…');
       expect(block.text.length).toBeLessThan(longCommand.length);
     }
@@ -438,7 +438,7 @@ describe('后台任务事件', () => {
     });
     expect(failed.blocks[0]).toMatchObject({
       kind: 'notice',
-      text: 'task task_2 失败 (exit 1): make test',
+      text: 'task task_2 failed (exit 1): make test',
     });
     const killed = run(initialSessionUiState(), {
       ...base,
@@ -448,7 +448,7 @@ describe('后台任务事件', () => {
     });
     expect(killed.blocks[0]).toMatchObject({
       kind: 'notice',
-      text: 'task task_2 已停止: make test',
+      text: 'task task_2 stopped: make test',
     });
   });
 });

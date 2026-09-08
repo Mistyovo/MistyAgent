@@ -66,6 +66,9 @@ function addUsage(total: TokenUsage, usage: TokenUsage | null): void {
   }
   total.inputTokens += usage.inputTokens;
   total.outputTokens += usage.outputTokens;
+  if (usage.cachedInputTokens !== undefined) {
+    total.cachedInputTokens = (total.cachedInputTokens ?? 0) + usage.cachedInputTokens;
+  }
 }
 
 /**

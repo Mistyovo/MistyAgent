@@ -167,7 +167,7 @@ describe('task 工具组', () => {
     expect(result.output).toContain('task_1');
     expect(manager.get('task_1')?.status).toBe('running');
     expect(bash.describeCall({ command: LONG_RUNNING, run_in_background: true })).toContain(
-      'Bash(后台)',
+      'Bash(bg)',
     );
   }, 15000);
 

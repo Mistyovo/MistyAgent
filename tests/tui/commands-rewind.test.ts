@@ -37,31 +37,31 @@ describe('/rewind', () => {
   it('rewind 回调缺省时提示不可用', async () => {
     const { ctx, notices } = makeCtx();
     await runSlashCommand('/rewind', ctx);
-    expect(notices[0]).toContain('检查点不可用');
+    expect(notices[0]).toContain('Checkpoints unavailable');
   });
 
   it('无参数列出检查点清单并附用法', async () => {
     const rewind = vi.fn((id?: string): string =>
-      id === undefined ? '可回滚的检查点：\n  1  12:00:00  改文件（改动 1 个文件）' : '已回滚',
+      id === undefined ? 'Rewindable checkpoints:\n  1  12:00:00  改文件 (1 files)' : 'Rolled back',
     );
     const { ctx, notices } = makeCtx({ rewind });
 
     await runSlashCommand('/rewind', ctx);
 
     expect(rewind).toHaveBeenCalledWith();
-    expect(notices[0]).toContain('可回滚的检查点');
-    expect(notices[0]).toContain('/rewind <id> 回滚到该检查点');
+    expect(notices[0]).toContain('Rewindable checkpoints:');
+    expect(notices[0]).toContain('/rewind <id> to roll back');
   });
 
   it('带 id 透传回滚', async () => {
     const rewind = vi.fn(
-      (id?: string): string => `已回滚到检查点 ${id}：还原 1 个文件，删除 0 个新建文件`,
+      (id?: string): string => `Rolled back to checkpoint ${id}: restored 1 files, deleted 0 created files`,
     );
     const { ctx, notices } = makeCtx({ rewind });
 
     await runSlashCommand('/rewind 2', ctx);
 
     expect(rewind).toHaveBeenCalledWith('2');
-    expect(notices[0]).toContain('已回滚到检查点 2');
+    expect(notices[0]).toContain('Rolled back to checkpoint 2');
   });
 });

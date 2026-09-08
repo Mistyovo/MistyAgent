@@ -22,7 +22,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const flat = (s: string): string => s.replace(/\s+/g, '');
 
 /** 用户消息前缀符号随终端宽度模式切换（▍ / 老式 conhost 回退 >） */
-const userMarker = (): string => (getTerminalWidthMode() === 'legacy-cjk' ? '>' : '▍');
+const userMarker = (): string => (getTerminalWidthMode() === 'legacy-cjk' ? '>' : '❯');
 
 function makeApp(provider: ChatProvider) {
   const registry = createBuiltinRegistry();
@@ -138,7 +138,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\x1b');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('已中断');
+      expect(lastFrame()).toContain('Interrupted by user');
       // 中断时流式缓冲冲刷成 assistant block，部分文本可见
       expect(lastFrame()).toContain('开始');
     });
@@ -160,7 +160,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('需要审批：Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('Permission needed: Bash echo ok-from-tool');
     });
     stdin.write('1');
     await vi.waitFor(() => {
@@ -187,7 +187,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('提问：用哪个框架？');
+      expect(lastFrame()).toContain('用哪个框架？');
       expect(lastFrame()).toContain('1. React');
     });
     stdin.write('1');
@@ -195,7 +195,7 @@ describe('App 交互（ink-testing-library）', () => {
       expect(lastFrame()).toContain('已按 React 继续');
     });
     // 弹窗已关闭（动态区不再渲染）
-    expect(lastFrame()).not.toContain('提问：用哪个框架？');
+    expect(lastFrame()).not.toContain('esc skip');
     // 回答经工具结果回喂进了消息历史
     const toolMessage = session.getMessages().find((m) => m.role === 'tool');
     expect(toolMessage).toMatchObject({ name: 'ask_user', content: '用户选择了：React' });
@@ -219,7 +219,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('提问：要继续吗？');
+      expect(lastFrame()).toContain('要继续吗？');
     });
     stdin.write('\x1b');
     await vi.waitFor(() => {
@@ -261,8 +261,8 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('▶ 正在实现功能');
-      expect(lastFrame()).toContain('☐ 写测试');
+      expect(lastFrame()).toContain('❯ 正在实现功能');
+      expect(lastFrame()).toContain('○ 写测试');
       expect(lastFrame()).toContain('完成了');
     });
   });
@@ -284,16 +284,16 @@ describe('App 交互（ink-testing-library）', () => {
     stdin.write('\r');
     // enter_plan_mode 已把权限切到 plan：状态栏经 plan-mode-changed 事件同步
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('计划待批准');
+      expect(lastFrame()).toContain('Would you like to proceed?');
       expect(lastFrame()).toContain('# 实施计划');
-      expect(lastFrame()).toContain('1. Approve');
+      expect(lastFrame()).toContain('1. Yes, approve and execute');
       expect(lastFrame()).toContain('⏸ plan mode');
     });
     stdin.write('1');
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('开始执行');
       // 弹窗已关闭，状态栏恢复进入前的 default
-      expect(lastFrame()).not.toContain('计划待批准');
+      expect(lastFrame()).not.toContain('Would you like to proceed?');
       expect(lastFrame()).toContain('? default');
     });
     expect(session.isPlanMode()).toBe(false);
@@ -321,7 +321,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('计划待批准');
+      expect(lastFrame()).toContain('Would you like to proceed?');
     });
     stdin.write('2');
     await vi.waitFor(() => {
@@ -409,7 +409,7 @@ describe('App 交互（ink-testing-library）', () => {
       <App session={session} registry={registry} model="primary-model" cwd={process.cwd()} />,
     );
 
-    expect(lastFrame()).toContain('primary-model  ? default');
+    expect(lastFrame()).toContain('primary-model · ? default');
     stdin.write('go');
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('go');
@@ -417,14 +417,14 @@ describe('App 交互（ink-testing-library）', () => {
     stdin.write('\r');
     // fallback 后、备用模型响应到达前：状态栏是备用模型，Static 区有切换提示
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('已切换到 backup-model');
-      expect(lastFrame()).toContain('backup-model  ? default');
+      expect(lastFrame()).toContain('switching to backup-model');
+      expect(lastFrame()).toContain('backup-model · ? default');
     });
     release();
     // fallback 仅当前 turn 生效：turn 结束后状态栏回到 session 主模型
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('备用模型完成');
-      expect(lastFrame()).toContain('primary-model  ? default');
+      expect(lastFrame()).toContain('primary-model · ? default');
     });
     expect(session.getModel()).toBe('primary-model');
   });
@@ -455,7 +455,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('未知命令：/nosuchcmd');
+      expect(lastFrame()).toContain('Unknown command: /nosuchcmd');
     });
     expect(provider.requests).toHaveLength(0);
   });
@@ -492,7 +492,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('需要审批：Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('Permission needed: Bash echo ok-from-tool');
     });
     // 弹窗期间其他全局键位仍禁用：Shift+Tab 不切权限模式
     stdin.write('\x1b[Z');
@@ -501,9 +501,9 @@ describe('App 交互（ink-testing-library）', () => {
     // 第一下 Ctrl+C：弹窗按拒绝关闭、turn 中断、进入退出预位
     stdin.write('\x03');
     await vi.waitFor(() => {
-      expect(lastFrame()).not.toContain('需要审批：Bash echo ok-from-tool');
-      expect(lastFrame()).toContain('已中断');
-      expect(lastFrame()).toContain('再按一次 Ctrl+C 退出');
+      expect(lastFrame()).not.toContain('Permission needed: Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('Interrupted by user');
+      expect(lastFrame()).toContain('ctrl+c again to exit');
     });
     await sleep(50);
     // 第二下 Ctrl+C：退出（unmount 时落最后一帧；此后输入不再产生新帧）
@@ -522,7 +522,7 @@ describe('App 交互（ink-testing-library）', () => {
     const { lastFrame, stdin, frames } = makeApp(new FakeProvider([]));
     stdin.write('\x03');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('再按一次 Ctrl+C 退出');
+      expect(lastFrame()).toContain('ctrl+c again to exit');
     });
     await sleep(50);
     const before = frames.length;
@@ -574,7 +574,7 @@ describe('工具输出落盘展示（#13）', () => {
       stdin.write('\r');
       await vi.waitFor(() => {
         expect(lastFrame()).toContain('row-1');
-        expect(lastFrame()).toContain('… 还有 3 行，完整输出: ');
+        expect(lastFrame()).toContain('… +3 lines');
       });
       // 预览只显示前 3 行，其余进了落盘文件
       expect(lastFrame()).not.toContain('row-5');
@@ -583,7 +583,7 @@ describe('工具输出落盘展示（#13）', () => {
       expect(files[0]).toMatch(/-\d+\.log$/);
       expect(readFileSync(join(dir, files[0]!), 'utf8')).toBe(longOutput);
       // 截断行里的路径就是落盘文件（路径可能因物理折行断开，比较时剥掉空白）
-      expect(flat(lastFrame()!)).toContain(flat(`完整输出: ${join(dir, files[0]!)}`));
+      expect(flat(lastFrame()!)).toContain(flat(join(dir, files[0]!)));
       await vi.waitFor(() => {
         expect(lastFrame()).toContain('完成');
       });

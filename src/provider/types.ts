@@ -42,6 +42,8 @@ export interface ToolDefinition {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** 命中 prompt cache 的输入 token（端点上报时才有；OpenAI prompt_tokens_details.cached_tokens） */
+  cachedInputTokens?: number;
 }
 
 export type FinishReason =

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Text, useInput, useStdout } from 'ink';
 
 import type { PlanApprovalReply, PlanApprovalRequest } from '#/core/plan-mode';
 
 import { useTerminalTextWrap } from '../terminal-text';
 import { getTheme } from '../theme';
+
+import { DialogFrame, DialogOption } from './DialogFrame';
 
 export interface PlanApprovalDialogProps {
   request: PlanApprovalRequest;
@@ -31,19 +33,19 @@ export function truncatePlanLines(plan: string, maxLines: number): string {
   if (lines.length <= maxLines) {
     return plan;
   }
-  return [...lines.slice(0, maxLines), `…（已截断，共 ${lines.length} 行）`].join('\n');
+  return [...lines.slice(0, maxLines), `… (${lines.length} lines, truncated)`].join('\n');
 }
 
 /**
- * 计划批准弹窗：显示 exit_plan_mode 提交的计划全文（超长截断），
- * 数字键 1/2 直接选择，←/→ 移动高亮，Enter 确认，Esc 拒绝（v1 不收反馈文本）。
- * 布局约束与 ApprovalDialog 一致（classic 边框、去右边框、内容过 wrap），
- * 理由见其实现注释（老式 conhost 歧义宽字符与 eraseLines 行数恒等）。
+ * 计划批准弹窗（对齐 Claude Code 的 "Would you like to proceed?" 样式）：
+ * 显示 exit_plan_mode 提交的计划全文（超长截断），数字键 1/2 直接选择，
+ * ←/→ 移动高亮，Enter 确认，Esc 拒绝（v1 不收反馈文本）。
+ * 布局与宽度约束见 DialogFrame。
  */
 export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps) {
   const options: Option[] = [
-    { approved: true, label: 'Approve' },
-    { approved: false, label: 'Reject' },
+    { approved: true, label: 'Yes, approve and execute' },
+    { approved: false, label: 'No, keep planning (esc)' },
   ];
   const [selection, setSelection] = useState(0);
   const { stdout } = useStdout();
@@ -82,25 +84,17 @@ export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps
   const plan = truncatePlanLines(request.plan, planLineBudget(rows));
   const theme = getTheme();
   return (
-    <Box
-      flexDirection="column"
-      alignSelf="flex-start"
-      borderStyle="classic"
-      borderColor={theme.permissionMode.plan}
-      borderRight={false}
-      paddingX={1}
-      marginTop={1}
-    >
-      <Text bold color={theme.permissionMode.plan}>
-        {wrap('计划待批准', 3)}
-      </Text>
+    <DialogFrame title="Would you like to proceed?" color={theme.permissionMode.plan}>
       <Text>{wrap(plan, 3)}</Text>
       {options.map((option, index) => (
-        <Text key={option.label} {...(index === selection ? { color: theme.accent } : {})}>
-          {wrap(`${index === selection ? '❯' : ' '} ${index + 1}. ${option.label}`, 3)}
-        </Text>
+        <DialogOption
+          key={option.label}
+          selected={index === selection}
+          index={index}
+          label={option.label}
+        />
       ))}
-      <Text dimColor>{wrap('←→ 移动 · 1/2 直选 · Enter 确认 · Esc 拒绝', 3)}</Text>
-    </Box>
+      <Text dimColor>{wrap('←/→ move · 1/2 select · enter confirm · esc reject', 3)}</Text>
+    </DialogFrame>
   );
 }

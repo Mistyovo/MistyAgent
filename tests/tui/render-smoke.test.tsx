@@ -89,9 +89,9 @@ describe('approvalDetailLines', () => {
       input: { path: 'a.ts', content },
       reason: 'r',
     });
-    expect(lines[0]).toBe('路径：a.ts');
+    expect(lines[0]).toBe('path: a.ts');
     expect(lines).toHaveLength(1 + 20 + 1);
-    expect(lines.at(-1)).toContain('截断');
+    expect(lines.at(-1)).toContain('truncated');
   });
 
   it('edit：old/new 以 - / + 前缀展示', () => {
@@ -102,7 +102,7 @@ describe('approvalDetailLines', () => {
       input: { path: 'a.ts', old_string: 'foo', new_string: 'bar\nbaz' },
       reason: 'r',
     });
-    expect(lines).toEqual(['路径：a.ts', '- foo', '+ bar', '+ baz']);
+    expect(lines).toEqual(['path: a.ts', '- foo', '+ bar', '+ baz']);
   });
 
   it('其他工具：回退为 JSON 预览', () => {
@@ -132,7 +132,7 @@ describe('ApprovalDialog 冒烟渲染', () => {
         onReply={() => {}}
       />,
     );
-    expect(output).toContain('需要审批：Bash git status');
+    expect(output).toContain('Permission needed: Bash git status');
     expect(output).toContain('git status');
     expect(output).toContain('1. Yes');
     expect(output).toContain("don't ask again for Bash(git *)");
@@ -151,9 +151,9 @@ describe('TodoList 冒烟渲染', () => {
         ]}
       />,
     );
-    expect(output).toContain('▶ 正在实现功能');
-    expect(output).toContain('☐ 写测试');
-    expect(output).toContain('☑ 读代码');
+    expect(output).toContain('❯ 正在实现功能');
+    expect(output).toContain('○ 写测试');
+    expect(output).toContain('✓ 读代码');
   });
 
   it('空列表不渲染任何内容', () => {
@@ -174,7 +174,7 @@ describe('App 冒烟渲染', () => {
     const output = renderToString(
       <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
     );
-    expect(output).toContain('输入消息，Enter 发送');
+    expect(output).toContain('Try ');
     expect(output).toContain('? default');
     expect(output).toContain('fake-model');
   });

@@ -24,6 +24,24 @@ describe('convertChatCompletionStream', () => {
     ]);
   });
 
+  it('usage 携带 prompt_tokens_details.cached_tokens 时透出为 cachedInputTokens', async () => {
+    const parts = await collectParts([
+      { delta: { content: 'hi' } },
+      { delta: {}, finishReason: 'stop' },
+      {
+        emptyChoices: true,
+        usage: { promptTokens: 100, completionTokens: 5, cachedTokens: 80 },
+      },
+    ]);
+    const done = parts.at(-1)!;
+    expect(done).toEqual({
+      type: 'done',
+      usage: { inputTokens: 100, outputTokens: 5, cachedInputTokens: 80 },
+      finishReason: 'completed',
+      rawFinishReason: 'stop',
+    });
+  });
+
   it('单个 tool call：id/name 在首个 chunk，arguments 分片追加', async () => {
     const parts = await collectParts([
       {

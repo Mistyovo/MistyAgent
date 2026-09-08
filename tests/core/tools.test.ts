@@ -66,6 +66,7 @@ describe('write', () => {
 describe('edit', () => {
   it('唯一替换成功', async () => {
     await writeFile(path.join(cwd, 'e.txt'), 'foo bar foo', 'utf8');
+    await readTool.call({ path: 'e.txt' }, ctx);
     const result = await editTool.call(
       { path: 'e.txt', old_string: 'bar', new_string: 'baz' },
       ctx,
@@ -76,6 +77,7 @@ describe('edit', () => {
 
   it('不唯一时报错，replace_all 替换全部', async () => {
     await writeFile(path.join(cwd, 'e.txt'), 'foo bar foo', 'utf8');
+    await readTool.call({ path: 'e.txt' }, ctx);
     const dup = await editTool.call({ path: 'e.txt', old_string: 'foo', new_string: 'x' }, ctx);
     expect(dup.isError).toBe(true);
     expect(dup.output).toContain('2 次');
@@ -90,6 +92,7 @@ describe('edit', () => {
 
   it('old_string 不存在时报错', async () => {
     await writeFile(path.join(cwd, 'e.txt'), 'content', 'utf8');
+    await readTool.call({ path: 'e.txt' }, ctx);
     const result = await editTool.call({ path: 'e.txt', old_string: 'zz', new_string: 'y' }, ctx);
     expect(result.isError).toBe(true);
   });

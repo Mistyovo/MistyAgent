@@ -208,17 +208,17 @@ describe('Session 计划模式状态机', () => {
 describe('plan 工具单测', () => {
   it('enter_plan_mode describeCall：有 reason 带上，无则回退', () => {
     const tool = createEnterPlanModeTool();
-    expect(tool.describeCall({ reason: '任务复杂' })).toBe('进入计划模式：任务复杂');
-    expect(tool.describeCall({})).toBe('进入计划模式');
+    expect(tool.describeCall({ reason: '任务复杂' })).toBe('Enter plan mode: 任务复杂');
+    expect(tool.describeCall({})).toBe('Enter plan mode');
     // reason 全部可选：未知字段被 schema 剥掉，解析仍成功
-    expect(tool.describeCall({ nope: 1 })).toBe('进入计划模式');
+    expect(tool.describeCall({ nope: 1 })).toBe('Enter plan mode');
   });
 
   it('exit_plan_mode describeCall：计划首行前 50 字截断', () => {
     const tool = createExitPlanModeTool();
-    expect(tool.describeCall({ plan: '# 标题\n正文' })).toBe('提交计划：# 标题');
+    expect(tool.describeCall({ plan: '# 标题\n正文' })).toBe('Submit plan: # 标题');
     const long = { plan: `${'计'.repeat(60)}\n正文` };
-    expect(tool.describeCall(long)).toBe(`提交计划：${'计'.repeat(50)}…`);
+    expect(tool.describeCall(long)).toBe(`Submit plan: ${'计'.repeat(50)}…`);
   });
 
   it('无宿主能力：两工具回喂不支持，isError', async () => {

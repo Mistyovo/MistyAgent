@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 import { Box, Text, useInput } from 'ink';
 
@@ -77,6 +77,32 @@ function LineWithCursor({ line, col }: { line: string; col: number }) {
   );
 }
 
+/** 空输入时的轮换占位建议（对齐 Claude Code 的 "Try …" 提示）；busy 时换排队提示 */
+const PLACEHOLDER_SUGGESTIONS = [
+  'Try "explain this codebase"',
+  'Try "fix the failing tests"',
+  'Try "refactor this module"',
+  'Try "review my recent changes"',
+  'Type a message, / for commands',
+];
+const PLACEHOLDER_ROTATE_MS = 5000;
+
+function usePlaceholder(busy: boolean, empty: boolean): string {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (busy || !empty) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      setIndex((current) => (current + 1) % PLACEHOLDER_SUGGESTIONS.length);
+    }, PLACEHOLDER_ROTATE_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [busy, empty]);
+  return busy ? 'turn in progress, typing queues for next turn…' : PLACEHOLDER_SUGGESTIONS[index]!;
+}
+
 /**
  * 多行输入框。
  * - Enter 提交；Alt+Enter 插入手动换行（多数终端到达为 \x1b\r，ink 解析为
@@ -87,7 +113,7 @@ function LineWithCursor({ line, col }: { line: string; col: number }) {
  * - Home/End（或 Ctrl+A/E）行首/行尾；Ctrl+U 清空；Ctrl+W 删前一个词
  * - Esc：空闲（无 turn）且输入非空时清空；busy 时让给 App 做中断
  * Windows 差异：ConPTY 的 Backspace 到达为 \x7f，ink 解析成 delete，
- * 因此 backspace/delete 统一按“删光标前一个字符”处理。
+ * 因此 backspace/delete 统一按"删光标前一个字符"处理。
  */
 export const PromptInput = memo(function PromptInput({
   busy,
@@ -229,11 +255,13 @@ export const PromptInput = memo(function PromptInput({
 
   const lines = value.split('\n');
   const position = locateCursor(lines, cursor);
-  // 内容预算 = 列数 - 1（满宽折行保险）- 2（'> ' 前缀）；
+  // 内容预算 = 列数 - 1（满宽折行保险）- 2（'❯ ' 前缀）；
   // value 入框时已 sanitize，折行不再改字符，光标 offset 保持对齐
   const budget = useTerminalColumns() - 3;
   const widthMode = getTerminalWidthMode();
   const theme = getTheme();
+  const marker = widthMode === 'legacy-cjk' ? '>' : '❯';
+  const placeholder = usePlaceholder(busy, value === '');
   return (
     <Box flexDirection="column" marginTop={1}>
       {lines.flatMap((line, index) => {
@@ -244,7 +272,7 @@ export const PromptInput = memo(function PromptInput({
         return wrapped.segments.map((segment, segmentIndex) => (
           <Text key={`${index}:${segmentIndex}`}>
             <Text {...(busy ? { dimColor: true } : { color: theme.promptMarker })}>
-              {index === 0 && segmentIndex === 0 ? '> ' : '  '}
+              {index === 0 && segmentIndex === 0 ? `${marker} ` : '  '}
             </Text>
             {segmentIndex === wrapped.cursorSegment ? (
               <LineWithCursor line={segment} col={wrapped.cursorCol} />
@@ -252,12 +280,12 @@ export const PromptInput = memo(function PromptInput({
               segment
             )}
             {index === 0 && segmentIndex === 0 && value === '' && (
-              <Text dimColor>{busy ? 'turn 进行中，输入将进入队列…' : '输入消息，Enter 发送'}</Text>
+              <Text dimColor>{placeholder}</Text>
             )}
           </Text>
         ));
       })}
-      {queuedCount > 0 && <Text dimColor>  +{queuedCount} 条消息排队中</Text>}
+      {queuedCount > 0 && <Text dimColor>{`  +${queuedCount} queued`}</Text>}
     </Box>
   );
 });

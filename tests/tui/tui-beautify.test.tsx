@@ -120,23 +120,23 @@ describe('StatusBar 反色底栏', () => {
     }
   });
 
-  it('rich 主题：整行发 statusBarBg 背景 SGR，模式保留模式色，填满 列数-1 宽', () => {
+  it('rich 主题：单行 dim 前景、无背景 SGR，模式保留模式色，宽度不超 列数-1', () => {
     setThemeForTests(themePalettes.dark.rich);
     withChalkLevel(3, () => {
       const output = renderToString(fullProps);
-      expect(output).toContain(hexToBgSgr(themePalettes.dark.rich.statusBarBg));
+      expect(output).not.toContain(hexToBgSgr(themePalettes.dark.rich.statusBarBg));
+      expect(output).toContain('[2m');
       expect(output).toContain(hexToSgr(themePalettes.dark.rich.permissionMode.default));
-      // 带色输出时尾部背景填充不被 trimEnd（行尾是 SGR 复位），整行恰好填满 79 格
       const line = sanitizeTerminalText(visibleLines(output)[0]!);
-      expect(measureTerminalWidth(line, 'narrow')).toBe(79);
+      expect(measureTerminalWidth(line, 'narrow')).toBeLessThanOrEqual(79);
     });
   });
 
-  it('basic 主题：背景发黑底命名色 SGR，无真彩序列', () => {
+  it('basic 主题：dim 命名色 SGR，无背景、无真彩序列', () => {
     setThemeForTests(themePalettes.dark.basic);
     withChalkLevel(1, () => {
       const output = renderToString(fullProps);
-      expect(output).toContain('\x1b[40m');
+      expect(output).toContain('\x1b[2m');
       expect(output).not.toContain('48;2;');
     });
   });
@@ -190,17 +190,16 @@ describe('TodoList 面板化', () => {
     />
   );
 
-  it('dim 标题行「任务」在前，列表项缩进 2 格', () => {
+  it('无标题，列表项缩进 2 格；符号按状态区分', () => {
     const lines = visibleLines(renderToString(todos));
-    expect(lines[0]).toBe('任务');
-    expect(lines[1]).toBe('  ▶ 正在实现功能');
-    expect(lines[2]).toBe('  ☐ 写测试');
-    expect(lines[3]).toBe('  ☑ 读代码');
+    expect(lines[0]).toBe('  ❯ 正在实现功能');
+    expect(lines[1]).toBe('  ○ 写测试');
+    expect(lines[2]).toBe('  ✓ 读代码');
   });
 
-  it('标题发 dim SGR；in_progress 项用 accent 色', () => {
+  it('done 项发 dim SGR；in_progress 项用 accent 色', () => {
     withChalkLevel(1, () => {
-      expect(renderToString(todos)).toContain('\x1b[2m任务');
+      expect(renderToString(todos)).toContain('\x1b[2m✓ 读代码');
     });
     setThemeForTests(themePalettes.dark.rich);
     withChalkLevel(3, () => {
@@ -214,11 +213,11 @@ describe('弹窗美化', () => {
   it('QuestionDialog：统一 · 分隔的键位提示行（单选/多选）', () => {
     const base = { id: 'q1', question: '选哪个？', options: [{ label: '甲' }, { label: '乙' }] };
     expect(renderToString(<QuestionDialog request={base} onReply={() => {}} />)).toContain(
-      '↑↓ 移动 · 1-4 直选 · Enter 确认 · Esc 跳过',
+      '↑/↓ move · 1-4 select · enter confirm · esc skip',
     );
     expect(
       renderToString(<QuestionDialog request={{ ...base, multiSelect: true }} onReply={() => {}} />),
-    ).toContain('↑↓ 移动 · 空格/1-4 勾选 · Enter 确认 · Esc 跳过');
+    ).toContain('↑/↓ move · space/1-4 toggle · enter confirm · esc skip');
   });
 
   it('QuestionDialog：标题用 accent 色', () => {
@@ -237,7 +236,7 @@ describe('弹窗美化', () => {
   it('PlanApprovalDialog：统一键位提示行，标题/边框用 permissionMode.plan 色', () => {
     expect(
       renderToString(<PlanApprovalDialog request={{ id: 'p1', plan: '# 计划' }} onReply={() => {}} />),
-    ).toContain('←→ 移动 · 1/2 直选 · Enter 确认 · Esc 拒绝');
+    ).toContain('←/→ move · 1/2 select · enter confirm · esc reject');
 
     setThemeForTests(themePalettes.dark.rich);
     withChalkLevel(3, () => {
@@ -250,28 +249,31 @@ describe('弹窗美化', () => {
 });
 
 describe('PromptInput 细节', () => {
-  it('idle：> 前缀用 promptMarker 色；busy：前缀变 dim 提示正在运行', () => {
+  it('idle：❯ 前缀用 promptMarker 色 + 轮换占位建议；busy：前缀变 dim + 排队占位', () => {
     setThemeForTests(themePalettes.dark.rich);
+    setTerminalWidthModeForTests('narrow');
     withChalkLevel(3, () => {
       const idle = renderToString(
         <PromptInput busy={false} queuedCount={0} disabled={false} onSubmit={() => {}} />,
       );
-      expect(idle).toContain(`${hexToSgr(themePalettes.dark.rich.promptMarker)}> `);
+      expect(idle).toContain(`${hexToSgr(themePalettes.dark.rich.promptMarker)}❯ `);
+      expect(idle).toContain('Try ');
 
       const busy = renderToString(
         <PromptInput busy={true} queuedCount={0} disabled={false} onSubmit={() => {}} />,
       );
-      expect(busy).toContain('\x1b[2m> ');
-      expect(busy).toContain('turn 进行中，输入将进入队列…');
+      expect(busy).toContain('\x1b[2m❯ ');
+      expect(busy).toContain('turn in progress, typing queues for next turn…');
     });
   });
 
   it('排队计数样式统一（dim）', () => {
+    setTerminalWidthModeForTests('narrow');
     withChalkLevel(1, () => {
       const output = renderToString(
         <PromptInput busy={true} queuedCount={2} disabled={false} onSubmit={() => {}} />,
       );
-      expect(output).toContain('\x1b[2m  +2 条消息排队中');
+      expect(output).toContain('\x1b[2m  +2 queued');
     });
   });
 });
@@ -290,16 +292,16 @@ function makeEmptySessionApp(provider: FakeProvider): { session: Session; regist
 }
 
 describe('App 欢迎头与空态', () => {
-  it('空会话：banner（名称行 + 提示行）与输入框上方的空态提示上屏', () => {
+  it('空会话：banner（wordmark + 提示行）与输入框占位上屏', () => {
+    setTerminalWidthModeForTests('legacy-cjk');
     const { session, registry } = makeEmptySessionApp(new FakeProvider([]));
     const output = renderToString(
       <App session={session} registry={registry} model="fake-model" cwd="/tmp/zenwork" />,
     );
     const lines = visibleLines(output);
     expect(lines[0]).toBe('Misty');
-    expect(lines[1]).toContain('fake-model · ? default · Shift+Tab 切换权限模式 · /help 查看命令');
-    expect(output).toContain('输入消息开始，/help 查看命令');
-    expect(output).toContain('输入消息，Enter 发送');
+    expect(lines[1]).toContain('fake-model · ? default · /help for commands');
+    expect(output).toContain('Try ');
     expect(output).toContain('zenwork');
   });
 
@@ -308,8 +310,8 @@ describe('App 欢迎头与空态', () => {
     const { lastFrame, stdin } = renderTestingLibrary(
       <App session={session} registry={registry} model="fake-model" cwd="/tmp/zenwork" />,
     );
-    expect(lastFrame()).toContain('Shift+Tab 切换权限模式');
-    expect(lastFrame()).toContain('输入消息开始');
+    setTerminalWidthModeForTests('legacy-cjk');
+    expect(lastFrame()).toContain('/help for commands');
     // 输入文本必须不在 banner 里出现（否则 waitFor 立即放行，后续 \r 会覆盖未消费的击键）
     stdin.write('问候一下');
     await vi.waitFor(() => {
@@ -319,8 +321,7 @@ describe('App 欢迎头与空态', () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('收到');
     });
-    expect(lastFrame()).not.toContain('Shift+Tab 切换权限模式');
-    expect(lastFrame()).not.toContain('输入消息开始');
+    expect(lastFrame()).not.toContain('/help for commands');
   });
 });
 
@@ -352,8 +353,8 @@ describe('legacy-cjk 虚拟终端：欢迎头与反色底栏无残帧', () => {
       const idle = stdout.content();
       // 欢迎头与空态提示
       expect(idle.split('\n').some((line) => line === 'Misty')).toBe(true);
-      expect(idle).toContain('Shift+Tab 切换权限模式');
-      expect(idle).toContain('输入消息开始');
+      expect(idle).toContain('/help for commands');
+      expect(idle).toContain('Try ');
       // 底栏单行：basename/模型/模式在同一物理行内（折行会把模式挤到下一行）
       const idleBar = idle.split('\n').find((line) => line.includes('MistyAgent'))!;
       expect(idleBar).toContain('fake-model');
@@ -370,13 +371,12 @@ describe('legacy-cjk 虚拟终端：欢迎头与反色底栏无残帧', () => {
       await sleep(300);
       const content = stdout.content();
       // 底栏唯一且仍是单行（含 token 用量右簇）
-      expect(occurrences(content, 'MistyAgent  fake-model')).toBe(1);
+      expect(occurrences(content, 'MistyAgent · fake-model')).toBe(1);
       const bar = content.split('\n').find((line) => line.includes('MistyAgent'))!;
       expect(bar).toContain('? default');
       expect(bar).toContain('↑');
       // banner 与空态提示随首条消息退场
-      expect(content).not.toContain('Shift+Tab 切换权限模式');
-      expect(content).not.toContain('输入消息开始');
+      expect(content).not.toContain('/help for commands');
       // 动态区重绘无残帧空白累积
       expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
     } finally {

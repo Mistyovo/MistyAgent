@@ -22,7 +22,7 @@ export function createTodoTool(store: TodoStore): Tool {
     inputSchema,
     isReadOnly: () => true,
     accesses: () => [{ kind: 'read' }],
-    describeCall: (input) => `Todo ${input.todos.length} 项任务`,
+    describeCall: (input) => `Todo (${input.todos.length} items)`,
     call: (input) => {
       const error = store.replace(input.todos);
       if (error !== null) {

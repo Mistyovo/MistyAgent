@@ -49,6 +49,10 @@ CLI 入口 (commander)
 }
 ```
 
+`maxContextTokens`（自动压缩的阈值基数）未显式配置时按当前模型查内置注册表
+（gpt-5 / gpt-4.1 / o3 / claude / kimi / deepseek / glm / qwen / gemini 等常见系列的
+公开上下文窗口近似值）；未收录模型回落 100k。`/model` 运行时切换模型后阈值即时跟随。
+
 **错误恢复**（对标 Claude Code）：
 
 - **传输层重试**：429 / 408 / 5xx / 网络错误在流出任何内容前按指数退避重试（1s/2s/4s，3 次）
@@ -124,7 +128,8 @@ npm run build && node dist/cli.js  # 或开发期 npm run dev
 ```
 
 默认启动 TUI。CLI flags：`--model`、`--fallback <model>`（可多次使用，追加到 fallbackModels 链尾）、
-`--base-url`、`--mode <权限模式>`、`-p, --print <prompt>`。
+`--base-url`、`--mode <权限模式>`、`-p, --print <prompt>`、`--output-format <text|stream-json>`
+（print 模式输出格式，见「无头模式」）。
 
 ### TUI 键位
 
@@ -152,6 +157,20 @@ Windows 终端差异：ConPTY 的 Backspace 到达为 `\x7f`，ink 解析为 del
 ```bash
 misty -p "把 README 里的错别字改了" --mode acceptEdits
 echo $?
+```
+
+**stream-json 输出**：`--output-format stream-json` 时 stdout 改为 NDJSON 机器可读
+事件流（每行一个 JSON 对象），供脚本 / CI / 上层封装消费；人类可读诊断仍写 stderr：
+
+- `{"type":"system","subtype":"init",...}` 起始行（model / cwd / sessionId / version）
+- `{"type":"assistant_text","text":...}` / `{"type":"assistant_reasoning","text":...}`：
+  流式 delta 聚合后的完整文本段，按工具/步骤边界保序冲刷
+- 其余原生事件逐个透出（`{"type":"<event.type>", ...}`，如 `tool-call-started` /
+  `tool-call-completed` / `approval-requested` / `model-fallback` / `turn-complete`）
+- `{"type":"result","stopReason":...,"steps":...,"usage":...,"exitCode":...}` 结尾行
+
+```bash
+misty -p "总结本仓库结构" --output-format stream-json | jq -c 'select(.type=="assistant_text")'
 ```
 
 ### 权限模式
@@ -214,6 +233,16 @@ ask_user / enter_plan_mode / exit_plan_mode。
 15s 超时），`web_search` 用 DuckDuckGo lite 免 key 搜索（可能受地区/频率限制），
 两者均为只读；连续 3 次完全相同的工具调用会触发循环防护，强制询问确认。
 
+**edit / write 的先读与新鲜度约束**：
+
+- `edit` 要求本会话先 `read` 过目标文件（防基于臆测内容的盲改）；错误会回喂，
+  模型补一次 read 即可恢复。`write` 覆盖已存在但未读过的文件会放行并在结果里附提示
+- read / write / edit 成功都会登记文件的 (mtime, size)；之后文件被外部编辑器、bash
+  命令或 `/rewind` 回滚改动时，`edit` / `write` 会拒绝执行并要求重新 read——
+  防止用陈旧版本内容覆盖外部修改（登记表为进程内存级，`/clear` 时清空）
+- `edit` 精确匹配失败后自动尝试行对齐容错匹配（逐行 trim 比较）：缩进、行尾空白、
+  CRLF/LF 混用等模型侧常见偏差仍可命中；替换串中的 `$&` 等按字面写入不被展开
+
 子代理增强（借鉴 Cairn/muteki 的长程任务机制）：
 
 - **超时/烂尾救援**：子代理未正常收官（达到步数上限或出错）且无结论文本时，
@@ -234,8 +263,18 @@ loop 质量护栏（常开，无需配置）：
   已见）时，注入纠偏提示要求停止重复读取、基于已有信息行动或说明卡点
   （每 turn 最多一次；doom-loop 已介入的步不重复计数）
 
-上下文：启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
-system prompt（总量 32KB 截断）。
+上下文管理：
+
+- 启动时从 project root（含 `.git`）到 cwd 逐级收集 `AGENTS.md` 注入
+  system prompt（总量 32KB 截断）
+- 估算 token 超过当前模型上限 × 0.8 时先做**微压缩**：把最近 12 条消息保护窗口
+  之外的旧工具输出（≥3000 字符）原地替换为占位符，全量落盘临时目录并在占位符附
+  路径（不调 LLM、可反复触发，上屏 `Pruned N stale tool outputs…`）；修剪后仍超阈值才走全量摘要压缩
+- 全量压缩：摘要请求只送按预算截取的尾部窗口（保证请求自身不溢出），压缩后回注
+  最近 read 过的文件当前内容 + 保留最近 4 条原消息；context 溢出错误触发响应式
+  强制压缩后重试本步
+- 状态栏实时显示上下文用量（`ctx 42%`，≥75% 变警示色、≥90% 变错误色）与 token
+  用量（端点上报缓存命中时附 `缓存 n`）
 
 ### 检查点与回滚
 

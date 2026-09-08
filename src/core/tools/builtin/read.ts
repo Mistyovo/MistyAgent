@@ -9,6 +9,7 @@ import { errorMessage } from '#/core/errors';
 import { defineTool } from '../tool';
 
 import { displayPath, errorResult, isBinaryFile, resolvePath, statKind } from './fs-utils';
+import { recordRead } from './read-registry';
 
 const MAX_LINES = 2000;
 const MAX_LINE_LENGTH = 2000;
@@ -102,6 +103,7 @@ export const readTool = defineTool({
         }
         const end = offset - 1 + slice.length;
         const note = hasMore ? `\n[已截断：显示到第 ${end} 行]` : '';
+        await recordRead(absolute);
         return { output: formatBody(slice, offset) + note };
       }
       const content = await readFile(absolute, 'utf8');
@@ -112,6 +114,7 @@ export const readTool = defineTool({
       const slice = lines.slice(offset - 1, offset - 1 + limit);
       const end = offset - 1 + slice.length;
       const note = end < lines.length ? `\n[已截断：共 ${lines.length} 行，显示到第 ${end} 行]` : '';
+      await recordRead(absolute);
       return { output: formatBody(slice, offset) + note };
     } catch (error) {
       return errorResult(`读取失败：${errorMessage(error)}`);

@@ -157,7 +157,7 @@ afterEach(() => {
 describe('真实终端渲染（虚拟终端 + eraseLines 路径）', () => {
   it('narrow 终端（ink 预算语义）：turn 完整落屏且无大片空白', async () => {
     const content = await runTurnInTerminal('narrow');
-    expect(content).toContain('▍ 你好');
+    expect(content).toContain('❯ 你好');
     expect(content).toContain('用户在打招呼');
     expect(content).toContain('你好！我是 Misty。');
     expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
@@ -174,7 +174,7 @@ describe('真实终端渲染（虚拟终端 + eraseLines 路径）', () => {
     // 同一根因的另一表现：eraseLines 少擦导致已上屏内容重复出现
     expect(occurrences(content, '> 你好')).toBe(1);
     expect(occurrences(content, '用户在打招呼，')).toBe(1);
-    expect(occurrences(content, 'MistyAgent  fake-model')).toBe(1);
+    expect(occurrences(content, 'MistyAgent · fake-model')).toBe(1);
   }, 15_000);
 });
 
@@ -272,12 +272,12 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
       stdin.write('run');
       await sleep(100);
       stdin.write('\r');
-      await waitForText(stdout, '需要审批');
+      await waitForText(stdout, 'Permission needed');
       // 弹窗打开期间 spinner 以 80ms 帧持续重绘动态区，给残帧累积留足时间
       await sleep(600);
       const dialogContent = stdout.content();
       dumpOnDemand(dialogContent, 'approval-dialog-open');
-      expect(occurrences(dialogContent, '需要审批')).toBe(1);
+      expect(occurrences(dialogContent, 'Permission needed')).toBe(1);
       expect(maxBlankRun(dialogContent)).toBeLessThanOrEqual(2);
       stdin.write('1'); // 放行，bash echo 真实执行
       await waitForText(stdout, '执行完毕');
@@ -286,7 +286,7 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
       dumpOnDemand(content, 'approval-dialog-done');
       expect(occurrences(content, '执行完毕')).toBe(1);
       // 弹窗关闭后动态区被干净擦除，不留「需要审批」残影
-      expect(occurrences(content, '需要审批')).toBe(0);
+      expect(occurrences(content, 'Permission needed')).toBe(0);
       expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
     } finally {
       instance.unmount();
@@ -310,12 +310,12 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
       stdin.write('ask');
       await sleep(100);
       stdin.write('\r');
-      await waitForText(stdout, '提问：');
+      await waitForText(stdout, '1-4 select');
       // 弹窗打开期间 spinner 以 80ms 帧持续重绘动态区，给残帧累积留足时间
       await sleep(600);
       const dialogContent = stdout.content();
       dumpOnDemand(dialogContent, 'question-dialog-open');
-      expect(occurrences(dialogContent, '提问：')).toBe(1);
+      expect(occurrences(dialogContent, '1-4 select')).toBe(1);
       expect(maxBlankRun(dialogContent)).toBeLessThanOrEqual(2);
       stdin.write('1'); // 直选「甲」
       await waitForText(stdout, '已继续');
@@ -323,8 +323,8 @@ describe('legacy-cjk 回归：上游不可控文本的物理宽度与 sanitize',
       const content = stdout.content();
       dumpOnDemand(content, 'question-dialog-done');
       expect(occurrences(content, '已继续')).toBe(1);
-      // 弹窗关闭后动态区被干净擦除，不留「提问：」残影
-      expect(occurrences(content, '提问：')).toBe(0);
+      // 弹窗关闭后动态区被干净擦除，不留弹窗残影
+      expect(occurrences(content, '1-4 select')).toBe(0);
       expect(maxBlankRun(content)).toBeLessThanOrEqual(2);
     } finally {
       instance.unmount();

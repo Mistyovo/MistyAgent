@@ -250,7 +250,7 @@ describe('agent 工具（tasks 批量后台）', () => {
           { description: '任务二', prompt: 'p2', subagent_type: 'plan' },
         ],
       }),
-    ).toBe('Agent(并行 2 任务) 任务一 等');
+    ).toBe('Agent(×2 parallel) 任务一 …');
 
     const settled = await manager.waitForSettled('task_1', 5000);
     expect(settled).toMatchObject({ kind: 'agent', status: 'completed', exitCode: 0 });

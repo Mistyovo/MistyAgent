@@ -212,6 +212,126 @@ describe('runPrintMode', () => {
   });
 });
 
+describe('runPrintMode --output-format stream-json', () => {
+  async function runJson(scripts: StreamedMessagePart[][]): Promise<{ code: number; lines: unknown[]; stderr: string }> {
+    const provider = new FakeProvider(scripts);
+    const registry = createBuiltinRegistry();
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+    });
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      outputFormat: 'stream-json',
+      cwd: '/w',
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+    const lines = stdout
+      .text()
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line));
+    return { code, lines, stderr: stderr.text() };
+  }
+
+  it('completed：init 起始、delta 聚合、result 收尾，每行都是合法 JSON', async () => {
+    const { code, lines } = await runJson([textStep('你好，世界')]);
+    expect(code).toBe(0);
+
+    const first = lines[0] as { type: string; subtype?: string; model?: string };
+    expect(first.type).toBe('system');
+    expect(first.subtype).toBe('init');
+    expect(first.model).toBe('fake-model');
+
+    const texts = lines.filter((line) => (line as { type: string }).type === 'assistant_text');
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as { text: string }).text).toBe('你好，世界');
+
+    const types = lines.map((line) => (line as { type: string }).type);
+    expect(types).toContain('turn-started');
+    expect(types).toContain('turn-complete');
+    expect(types.indexOf('turn-complete')).toBeLessThan(types.indexOf('result') === -1 ? types.length : types.indexOf('result'));
+
+    const last = lines.at(-1) as { type: string; stopReason: string; exitCode: number; steps: number };
+    expect(last.type).toBe('result');
+    expect(last.stopReason).toBe('completed');
+    expect(last.exitCode).toBe(0);
+    expect(last.steps).toBeGreaterThan(0);
+  });
+
+  it('审批请求自动拒绝同样生效：approval-requested 进事件流，stderr 留人类诊断', async () => {
+    const { code, lines, stderr } = await runJson([
+      toolCallStep([{ name: 'bash', arguments: '{"command":"echo hi"}' }]),
+      textStep('收尾'),
+    ]);
+    expect(code).toBe(0);
+    const types = lines.map((line) => (line as { type: string }).type);
+    expect(types).toContain('approval-requested');
+    const completed = lines.find(
+      (line) => (line as { type: string }).type === 'tool-call-completed',
+    ) as { isError: boolean };
+    expect(completed.isError).toBe(true);
+    expect(stderr).toContain('无头模式无法交互审批');
+  });
+
+  it('delta 在工具事件边界保序冲刷：assistant_text 先于其后的 tool-call-started', async () => {
+    const fakeRead = defineTool({
+      name: 'fake_read',
+      description: 'test',
+      inputSchema: z.object({}),
+      isReadOnly: () => true,
+      describeCall: () => 'FakeRead',
+      call: async () => ({ output: 'ok' }),
+    });
+    const provider = new FakeProvider([
+      [
+        { type: 'text-delta', text: '先说' },
+        ...toolCallStep([{ name: 'fake_read', arguments: '{}' }]),
+      ],
+      textStep('收尾'),
+    ]);
+    const registry = new ToolRegistry();
+    registry.register(fakeRead);
+    const session = new Session({
+      provider,
+      model: 'fake-model',
+      systemPrompt: 'system',
+      tools: registry.list(),
+      cwd: process.cwd(),
+    });
+    const stdout = fakeStream();
+    const stderr = fakeStream();
+    const code = await runPrintMode({
+      session,
+      registry,
+      prompt: 'go',
+      outputFormat: 'stream-json',
+      cwd: '/w',
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    });
+    expect(code).toBe(0);
+    const types = stdout
+      .text()
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => (JSON.parse(line) as { type: string }).type);
+    const textIndex = types.indexOf('assistant_text');
+    const startedIndex = types.indexOf('tool-call-started');
+    expect(textIndex).toBeGreaterThanOrEqual(0);
+    expect(startedIndex).toBeGreaterThan(textIndex);
+    expect(stderr.text()).toBe('');
+  });
+});
+
 describe('runPrintMode 后台任务 drain', () => {
   it('turn 结束后仍有 running 任务：至多等 3s 后终止，防进程挂住', async () => {
     const tasks = new TaskManager();

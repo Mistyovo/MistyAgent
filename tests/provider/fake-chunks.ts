@@ -9,7 +9,7 @@ import type { StreamedMessagePart } from '#/provider/types';
 export interface FakeChunkSpec {
   delta?: Record<string, unknown>;
   finishReason?: string | null;
-  usage?: { promptTokens: number; completionTokens: number };
+  usage?: { promptTokens: number; completionTokens: number; cachedTokens?: number };
   emptyChoices?: boolean;
 }
 
@@ -37,6 +37,9 @@ export function makeChunk(spec: FakeChunkSpec): ChatCompletionChunk {
             prompt_tokens: spec.usage.promptTokens,
             completion_tokens: spec.usage.completionTokens,
             total_tokens: spec.usage.promptTokens + spec.usage.completionTokens,
+            ...(spec.usage.cachedTokens !== undefined
+              ? { prompt_tokens_details: { cached_tokens: spec.usage.cachedTokens } }
+              : {}),
           }
         : null,
   };

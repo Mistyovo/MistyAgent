@@ -265,7 +265,7 @@ describe('agent 工具（后台子代理）', () => {
     expect(result.output).toContain('task_output');
     expect(tool.describeCall({
       description: '后台找 foo', prompt: 'p', subagent_type: 'explore', run_in_background: true,
-    })).toContain('Agent(后台 explore)');
+    })).toContain('Agent(bg explore)');
 
     const settled = await manager.waitForSettled('task_1', 5000);
     expect(settled).toMatchObject({ kind: 'agent', status: 'completed', exitCode: 0 });

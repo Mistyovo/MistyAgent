@@ -153,7 +153,7 @@ export function createBashTool(tasks: TaskManager): Tool {
     describeCall: (input) => {
       const command =
         input.command.length > 80 ? `${input.command.slice(0, 80)}…` : input.command;
-      return input.run_in_background === true ? `Bash(后台) ${command}` : `Bash ${command}`;
+      return input.run_in_background === true ? `Bash(bg) ${command}` : `Bash ${command}`;
     },
     call: async (input, ctx) => {
       if (input.run_in_background === true) {

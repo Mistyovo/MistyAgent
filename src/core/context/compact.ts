@@ -5,7 +5,7 @@ import { readTool } from '../tools/builtin/read';
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 100_000;
 /** 估算 token 超过 maxContextTokens × 阈值时触发压缩 */
-const COMPACT_THRESHOLD_RATIO = 0.8;
+export const COMPACT_THRESHOLD_RATIO = 0.8;
 const DEFAULT_KEEP_RECENT = 4;
 /** 压缩后回注的最近 read 文件数上限 */
 const REINJECT_MAX_FILES = 5;
@@ -313,4 +313,68 @@ export async function maybeCompactHistory(options: MaybeCompactOptions): Promise
     return null;
   }
   return compactHistory(options);
+}
+
+export function isOverCompactThreshold(
+  messages: readonly Message[],
+  maxContextTokens: number,
+): boolean {
+  return estimateTokens(messages) > maxContextTokens * COMPACT_THRESHOLD_RATIO;
+}
+
+/** 微压缩尾部保护窗口：最近 N 条消息不修剪（模型正在盯着的内容） */
+const PRUNE_KEEP_RECENT_MESSAGES = 12;
+/** 单条工具输出进入修剪的最小字符数 */
+const PRUNE_MIN_OUTPUT_CHARS = 3000;
+const PRUNE_MARK = '[此工具输出已修剪以释放上下文';
+
+export interface PruneResult {
+  prunedCount: number;
+  beforeTokens: number;
+  afterTokens: number;
+}
+
+export interface PruneOptions {
+  /** 尾部保护窗口（最近 N 条消息不修剪），默认 12 */
+  keepRecentMessages?: number;
+  /** 单条输出进入修剪的最小字符数，默认 3000 */
+  minOutputChars?: number;
+  /** 全量输出落盘（返回路径，写进占位符）；缺省只留占位符 */
+  spill?: (output: string) => string | null;
+}
+
+/**
+ * 微压缩（microcompaction）：把保护窗口外的超长 tool 输出原地替换为占位符
+ * （提供 spill 时全量落盘并在占位符附路径）。不调 LLM、幂等、可反复触发；
+ * 阈值触发的全量压缩前先试这一步，多数长会话靠它即可回到阈值内。
+ * 没有可修剪目标返回 null。只改 tool 消息的 content，wire 配对不受影响。
+ */
+export function pruneStaleToolOutputs(
+  messages: Message[],
+  options: PruneOptions = {},
+): PruneResult | null {
+  const keep = options.keepRecentMessages ?? PRUNE_KEEP_RECENT_MESSAGES;
+  const minChars = options.minOutputChars ?? PRUNE_MIN_OUTPUT_CHARS;
+  const beforeTokens = estimateTokens(messages);
+  let prunedCount = 0;
+  const cutoff = messages.length - keep;
+  for (let index = 0; index < cutoff; index += 1) {
+    const message = messages[index]!;
+    if (
+      message.role !== 'tool' ||
+      message.content.length < minChars ||
+      message.content.startsWith(PRUNE_MARK)
+    ) {
+      continue;
+    }
+    const spilled = options.spill?.(message.content) ?? null;
+    message.content =
+      `${PRUNE_MARK}：原 ${message.content.length} 字符` +
+      (spilled !== null ? `，全量已落盘 ${spilled}]` : ']');
+    prunedCount += 1;
+  }
+  if (prunedCount === 0) {
+    return null;
+  }
+  return { prunedCount, beforeTokens, afterTokens: estimateTokens(messages) };
 }

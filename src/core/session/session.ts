@@ -3,12 +3,16 @@ import { basename, join } from 'node:path';
 
 import type { HooksSettings, PermissionMode, PermissionRule } from '#/config/schema';
 import type { ChatProvider, Message } from '#/provider/types';
+import { lookupModelContextWindow } from '#/provider/model-registry';
 
 import type { CheckpointStore } from '../checkpoint/checkpoint';
 import {
   compactHistory,
   DEFAULT_MAX_CONTEXT_TOKENS,
+  estimateTokens,
+  isOverCompactThreshold,
   maybeCompactHistory,
+  pruneStaleToolOutputs,
   type CompactResult,
 } from '../context/compact';
 import { errorMessage } from '../errors';
@@ -32,6 +36,7 @@ import {
 import { QuestionManager, type QuestionReply, type QuestionRequest } from '../question';
 import type { TaskManager } from '../tasks';
 import type { TodoStore } from '../todos';
+import { clearReadRegistry } from '../tools/builtin/read-registry';
 import type { Tool } from '../tools/tool';
 
 import {
@@ -64,7 +69,7 @@ export interface SessionConfig {
   };
   /** resume 重建的历史 */
   initialMessages?: Message[] | undefined;
-  /** 自动压缩阈值基数，缺省 DEFAULT_MAX_CONTEXT_TOKENS */
+  /** 自动压缩阈值基数；缺省按当前模型查注册表（provider/model-registry），未收录回落 100k */
   maxContextTokens?: number | undefined;
   /** 输出 token 上限初值（缺省 8192）；length 截断时自动翻倍升级，封顶 65536 */
   maxTokens?: number | undefined;
@@ -145,7 +150,8 @@ export class Session {
   private previousMode: PermissionMode;
   private activeController: AbortController | null = null;
   private model: string;
-  private readonly maxContextTokens: number;
+  /** 显式配置的压缩阈值基数（maxContextTokens）；null = 按当前模型查注册表 */
+  private readonly contextTokensOverride: number | null;
   private transcript: TranscriptState | null = null;
   private readonly todos: TodoStore | null = null;
   private readonly hookRunner: HookRunner | null = null;
@@ -163,7 +169,7 @@ export class Session {
     this.planMode = this.permissionMode === 'plan';
     this.previousMode = 'default';
     this.model = config.model;
-    this.maxContextTokens = config.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
+    this.contextTokensOverride = config.maxContextTokens ?? null;
     if (config.initialMessages !== undefined) {
       this.messages.push(...config.initialMessages);
     }
@@ -275,6 +281,20 @@ export class Session {
     this.model = model;
   }
 
+  /** 当前模型的上下文上限：显式配置 > 模型注册表 > 100k 缺省；/model 切换后即时生效 */
+  getContextLimit(): number {
+    return (
+      this.contextTokensOverride ??
+      lookupModelContextWindow(this.model) ??
+      DEFAULT_MAX_CONTEXT_TOKENS
+    );
+  }
+
+  /** 当前历史的估算 token 与上限（状态栏上下文用量指示） */
+  getContextUsage(): { estimatedTokens: number; limit: number } {
+    return { estimatedTokens: estimateTokens(this.messages), limit: this.getContextLimit() };
+  }
+
   getSessionId(): string | null {
     return this.transcript?.sessionId ?? null;
   }
@@ -350,6 +370,7 @@ export class Session {
   newSession(): void {
     this.messages.length = 0;
     this.alreadySurfaced.clear();
+    clearReadRegistry();
     this.todos?.clear();
     this.checkpoints?.reset();
     if (this.transcript !== null) {
@@ -444,11 +465,21 @@ export class Session {
   }
 
   private async maybeCompact(): Promise<void> {
+    // 超阈值先微压缩：修剪保护窗口外的旧工具输出（无 LLM 调用），回到阈值内则本轮到此为止
+    if (isOverCompactThreshold(this.messages, this.getContextLimit())) {
+      const pruned = pruneStaleToolOutputs(this.messages, {
+        spill: (output) => spillToolOutput(output, this.transcript?.sessionId ?? 'interactive'),
+      });
+      if (pruned !== null && !isOverCompactThreshold(this.messages, this.getContextLimit())) {
+        this.dispatch({ type: 'context-pruned', ...pruned });
+        return;
+      }
+    }
     const result = await maybeCompactHistory({
       provider: this.config.provider,
       model: this.model,
       messages: this.messages,
-      maxContextTokens: this.maxContextTokens,
+      maxContextTokens: this.getContextLimit(),
       cwd: this.config.cwd,
       signal: this.activeController?.signal,
     });
@@ -463,7 +494,7 @@ export class Session {
       provider: this.config.provider,
       model: this.model,
       messages: this.messages,
-      maxContextTokens: this.maxContextTokens,
+      maxContextTokens: this.getContextLimit(),
       force: true,
       cwd: this.config.cwd,
       signal: this.activeController?.signal,

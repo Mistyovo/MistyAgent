@@ -15,8 +15,9 @@ export function createTodoTool(store: TodoStore): Tool {
   return defineTool({
     name: 'todo',
     description:
-      '更新会话级任务列表（全量替换整个列表，不是增量修改）。' +
-      '多步骤任务开始时建立列表，进行中保持恰好一个 in_progress，完成一项标为 done。' +
+      '更新会话级任务列表（全量替换整个列表，不是增量修改），列表对用户可见，反映真实进度。' +
+      '预计三步以上的任务在开始时建立列表，把工作拆成可验证的小步；' +
+      '进行中保持恰好一项 in_progress，完成一项立即标 done 并让下一项进入。' +
       '已 done 的任务保持原样，不要修改其内容。',
     inputSchema,
     isReadOnly: () => true,

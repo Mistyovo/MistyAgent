@@ -30,9 +30,9 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
   return defineTool({
     name: 'ask_user',
     description:
-      '向用户提问并等待选择，用于需要用户拍板的分支决策（方案取舍、确认范围等）。' +
-      '给出 2-4 个选项；用户可能跳过不答，此时根据已有信息自行决策。' +
-      '不要问无关紧要的问题，能自行决定的不要问。',
+      '向用户提问并等待选择，用于需要用户拍板的分支决策（方案取舍、确认影响范围等）。' +
+      '问题一次问清，给出 2-4 个覆盖主要方向的选项，推荐项放第一个并注明"（推荐）"。' +
+      '用户可能跳过不答，此时根据已有信息自行决策。不要问无关紧要的问题，能自行决定的不要问。',
     inputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],

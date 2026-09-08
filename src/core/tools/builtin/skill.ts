@@ -21,7 +21,8 @@ export function createSkillTool(skills: readonly SkillDefinition[]): Tool {
   return defineTool({
     name: 'skill',
     description:
-      '调用一个技能：把该技能的正文作为指令注入当前会话并照其执行。可用技能：\n' +
+      '调用一个技能：把该技能的正文作为指令注入当前会话，立即照其执行（正文可能要求继续调用其他工具）。' +
+      '用户意图命中某技能时优先走本工具，不要绕开它手工实现。可用技能：\n' +
       skills.map((skill) => `- ${skill.name}：${skill.description}`).join('\n'),
     inputSchema,
     isReadOnly: () => true,

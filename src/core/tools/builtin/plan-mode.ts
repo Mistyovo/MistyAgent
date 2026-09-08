@@ -23,9 +23,10 @@ export function createEnterPlanModeTool(host?: PlanModeHost): Tool {
   return defineTool({
     name: 'enter_plan_mode',
     description:
-      '进入计划模式：任务复杂、需要先调研再动手时调用。进入后只能只读探索' +
-      '（write / edit / bash 等写/执行类工具会被拒绝）；调研完成后用 exit_plan_mode ' +
-      '提交实施计划，经用户批准后开始执行。简单明确的任务不要进入计划模式。',
+      '进入计划模式：任务复杂、影响面大或方案存在取舍、需要先调研再动手时调用。' +
+      '进入后只能只读探索（write / edit / bash 等写/执行类工具会被拒绝）；' +
+      '调研完成后用 exit_plan_mode 提交实施计划，经用户批准后开始执行。' +
+      '简单明确的任务不要进入计划模式。',
     inputSchema: enterInputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],
@@ -62,7 +63,8 @@ export function createExitPlanModeTool(host?: PlanModeHost): Tool {
     name: 'exit_plan_mode',
     description:
       '提交实施计划并请求退出计划模式。仅在计划模式中、已完成只读调研后调用；' +
-      '用户批准后自动退出计划模式并开始执行，被拒绝时按反馈修订计划后重新提交。',
+      '计划要具体到可直接执行（markdown：分步动作、每步涉及的文件、执行顺序、风险与验证方式）。' +
+      '用户批准后自动退出计划模式并开始执行；被拒绝时按反馈修订计划后重新提交。',
     inputSchema: exitInputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],

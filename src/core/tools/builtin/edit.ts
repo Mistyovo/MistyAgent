@@ -29,7 +29,8 @@ export const editTool = defineTool({
   name: 'edit',
   description:
     '对文件做精确字符串替换：把 old_string 替换为 new_string。' +
-    'old_string 必须恰好出现一次，或用 replace_all 替换全部。',
+    'old_string 必须与文件内容逐字符一致（含缩进与空行）且恰好出现一次——不唯一时多带几行上下文使其唯一；' +
+    '要替换全部出现位置用 replace_all。修改前先 read 目标文件；替换成功后无需重新 read 确认。',
   inputSchema,
   accesses: (input) => [{ kind: 'write', paths: [input.path] }],
   describeCall: (input) => `Edit ${input.path}`,

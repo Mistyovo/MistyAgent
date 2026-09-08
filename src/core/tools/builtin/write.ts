@@ -16,7 +16,9 @@ const inputSchema = z.object({
 
 export const writeTool = defineTool({
   name: 'write',
-  description: '创建或覆盖写入文件，父目录不存在时自动创建。大改动优先用 edit 做精确替换。',
+  description:
+    '创建新文件或整文件覆盖写入，父目录不存在时自动创建。' +
+    '新建文件用本工具；已读过的文件做局部修改优先用 edit 精确替换，整文件重写容易带入意外改动。',
   inputSchema,
   accesses: (input) => [{ kind: 'write', paths: [input.path] }],
   describeCall: (input) => `Write ${input.path}`,

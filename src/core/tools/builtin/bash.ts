@@ -143,9 +143,11 @@ export function createBashTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'bash',
     description:
-      '在 shell 中执行命令并返回 stdout/stderr。' +
-      `默认超时 ${DEFAULT_TIMEOUT_MS / 1000}s，输出超过 ${MAX_OUTPUT_CHARS} 字符会被截断。` +
-      'run_in_background=true 时后台执行并立即返回 taskId。',
+      '在 shell 中执行命令并返回 stdout/stderr（退出码非 0 会标注）。' +
+      `默认超时 ${DEFAULT_TIMEOUT_MS / 1000}s（慢命令用 timeout 调整），输出超过 ${MAX_OUTPUT_CHARS} 字符会被截断。` +
+      '长驻或耗时命令（dev server、watcher、大测试集）改用 run_in_background=true：立即返回 taskId，' +
+      '不阻塞会话，用 task_output 查看输出、task_stop 终止。' +
+      '读文件/找文件/搜内容优先用 read / glob / grep 专用工具。',
     inputSchema,
     accesses: () => [{ kind: 'execute' }],
     describeCall: (input) => {

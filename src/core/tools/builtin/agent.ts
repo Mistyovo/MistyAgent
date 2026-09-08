@@ -67,11 +67,13 @@ const READONLY_TOOL_NAMES = new Set(['read', 'glob', 'grep', 'web_fetch', 'web_s
 
 const ROLE_PROMPTS: Record<string, string> = {
   explore:
-    '你是代码探索子代理。用只读工具（read / glob / grep）在代码库中定位与任务相关的实现，' +
-    '输出结论：涉及的文件与行号、关键逻辑摘要、与任务相关的发现。',
+    '你是代码探索子代理。用只读工具（read / glob / grep）在代码库中定位与任务相关的实现。' +
+    '结论自包含、具体：先给一段总体结论，再列出涉及的文件与行号（path:line）及每处的一句话摘要、' +
+    '与任务直接相关的发现。引用真实符号名与路径，不要写"某处大概"这类模糊描述。',
   plan:
-    '你是实现规划子代理。用只读工具（read / glob / grep）了解代码现状，' +
-    '输出一份可执行的实现计划：分步动作、涉及的文件、风险与验证方式。',
+    '你是实现规划子代理。用只读工具（read / glob / grep）了解代码现状，输出一份可直接执行的实现计划：' +
+    '分步动作（每步改哪个文件、做什么）、步骤顺序与依赖、风险点、验证方式（跑什么命令确认）。' +
+    '计划基于真实代码：引用具体文件与符号，不要凭空假设。',
 };
 
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
@@ -121,13 +123,14 @@ function availableEntries(host: AgentToolHost): SubagentEntry[] {
 function buildDescription(host: AgentToolHost): string {
   const lines = availableEntries(host).map((entry) => `- ${entry.name}：${entry.description}`);
   return (
-    '启动一个子代理处理独立子任务（独立上下文与消息历史）。\n' +
+    '启动子代理处理独立子任务：它在独立上下文与消息历史里工作，探索过程不占用本会话上下文，只把最终结论带回。' +
+    '适用于大范围代码探索 / 检索、互相独立的并行子任务。\n' +
     '可用子代理类型（subagent_type）：\n' +
     `${lines.join('\n')}\n` +
-    '子代理看不到本会话历史，prompt 必须自包含；前台调用返回其最终结论文本，' +
-    'run_in_background=true 时立即返回 taskId 后台运行（用 task_output 取结果）。\n' +
-    '批量并行：tasks 传入 1-8 个 { description, prompt, subagent_type } 任务，' +
-    '适用于互相独立、可并行的子任务；并发执行，结果按任务分节聚合返回，部分失败不影响其他任务。'
+    '子代理看不到本会话历史，prompt 必须自包含：写清目标、范围（涉及目录 / 模块）、已知线索与期望的输出格式。\n' +
+    '前台调用阻塞至其返回最终结论文本；run_in_background=true 时立即返回 taskId 后台运行（用 task_output 取结果）。\n' +
+    '批量并行：tasks 传入 1-8 个 { description, prompt, subagent_type }，适用于互相独立、可并行的子任务；' +
+    '并发执行，结果按任务分节聚合返回，部分失败不影响其他任务。有依赖关系的子任务不要放进同一批。'
   );
 }
 
@@ -156,7 +159,7 @@ function environmentLines(cwd: string, writable: boolean): string[] {
     writable
       ? '你没有交互审批能力：需要审批的操作会被自动拒绝，届时改用只读方式获取信息，' +
         '或在最终结论中说明需要主代理代为执行的写/执行操作。'
-      : '不要修改任何文件；你没有交互能力，直接给出最终结论文本。',
+      : '不要修改任何文件；你没有交互能力。最终结论文本会原样交回主代理，务必自包含且具体（含文件路径与行号）。',
     '',
     `当前工作目录：${cwd}（工具调用中的相对路径都相对它解析）。`,
     environment,

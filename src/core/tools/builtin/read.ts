@@ -63,9 +63,9 @@ async function readLineRange(
 export const readTool = defineTool({
   name: 'read',
   description:
-    '读取文本文件内容，输出带行号（<行号>\\t<内容>）。' +
-    `默认最多 ${MAX_LINES} 行，超长行在 ${MAX_LINE_LENGTH} 字符处截断。` +
-    `超过 ${MAX_FILE_SIZE / 1024 / 1024}MB 的文件必须用 offset/limit 分段读取。` +
+    '读取文本文件内容，输出带行号（<行号>\\t<内容>），行号可直接用于后续 edit 定位与结论引用。' +
+    `默认最多 ${MAX_LINES} 行，超长行在 ${MAX_LINE_LENGTH} 字符处截断；` +
+    `大文件（超过 ${MAX_FILE_SIZE / 1024 / 1024}MB）用 offset/limit 分段读取，读满一屏后按提示继续。` +
     '二进制文件与目录不可读。',
   inputSchema,
   isReadOnly: () => true,

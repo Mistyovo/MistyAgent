@@ -28,7 +28,8 @@ export const grepTool = defineTool({
   name: 'grep',
   description:
     '在文件内容中搜索正则匹配，输出 <path>:<行号>:<内容>（跳过 .git / node_modules 与二进制文件）。' +
-    `最多返回 ${MAX_MATCHES} 条。`,
+    `最多返回 ${MAX_MATCHES} 条。已知符号名 / 报错文案直接搜它；` +
+    '用 include（如 "*.ts"）限定文件类型可显著减少噪音。',
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],

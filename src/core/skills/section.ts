@@ -18,7 +18,8 @@ export function buildSkillsSystemPromptSection(skills: readonly SkillDefinition[
     '',
     ...lines,
     '',
-    '当用户意图命中某技能的 when_to_use 或 description 时，调用 skill 工具（传 name）把技能正文注入当前会话执行；' +
-      '正文可能含 $ARGUMENTS 占位符，用 args 参数传入用户给的参数。',
+    '当用户意图命中某技能的 when_to_use 或 description 时，调用 skill 工具（传 name）' +
+    '把技能正文注入当前会话并立即照其执行，不要绕开技能手工实现；' +
+    '正文可能含 $ARGUMENTS 占位符，用 args 参数传入用户给的参数。',
   ].join('\n');
 }

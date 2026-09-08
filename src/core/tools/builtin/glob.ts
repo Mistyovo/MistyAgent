@@ -17,8 +17,9 @@ const inputSchema = z.object({
 export const globTool = defineTool({
   name: 'glob',
   description:
-    '按文件名模式查找文件，返回相对 cwd 的路径列表（跳过 .git / node_modules）。' +
-    `最多返回 ${MAX_RESULTS} 条。`,
+    '按文件名模式查找文件（探索代码库的起点：先找到文件再 read / grep）。' +
+    '返回相对 cwd 的路径列表（跳过 .git / node_modules），' +
+    `最多 ${MAX_RESULTS} 条；* 不跨目录，** 跨目录。`,
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],

@@ -34,8 +34,8 @@ export function createTaskOutputTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'task_output',
     description:
-      '查看后台任务（bash run_in_background 或 agent 后台子代理）的当前输出与状态。' +
-      `block=true 时挂起等待任务结束或超时（timeoutMs 上限 ${MAX_BLOCK_TIMEOUT_MS / 1000}s，缺省等满上限）。`,
+      '查看后台任务（bash run_in_background 或 agent 后台子代理）的当前输出与状态；任务结束时会自动收到通知，通知前的中间进度用它主动查询。' +
+      `block=true 时挂起等待任务结束或超时（timeoutMs 上限 ${MAX_BLOCK_TIMEOUT_MS / 1000}s，缺省等满上限），适合等待即将完成的任务。`,
     inputSchema: z.object({
       taskId: z.string().describe('后台任务 id（如 task_1）'),
       block: z.boolean().optional().describe('true 时等到任务结束或超时再返回，默认 false'),

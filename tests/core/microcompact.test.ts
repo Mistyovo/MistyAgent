@@ -46,12 +46,12 @@ describe('pruneStaleToolOutputs 微压缩', () => {
     expect(result).not.toBeNull();
     expect(result!.prunedCount).toBe(2);
     expect(result!.afterTokens).toBeLessThan(before);
-    expect((messages[1] as { content: string }).content).toContain('已修剪');
+    expect((messages[1] as { content: string }).content).toContain('pruned');
     expect((messages[2] as { content: string }).content).toBe('done');
-    expect((messages[3] as { content: string }).content).toContain('已修剪');
+    expect((messages[3] as { content: string }).content).toContain('pruned');
     expect((messages[4] as { content: string }).content).toBe('short');
     for (const message of messages.slice(-12)) {
-      expect(message.content).not.toContain('已修剪');
+      expect(message.content).not.toContain('pruned');
     }
   });
 
@@ -81,8 +81,8 @@ describe('pruneStaleToolOutputs 微压缩', () => {
     });
     expect(result!.prunedCount).toBe(1);
     const placeholder = (messages[0] as { content: string }).content;
-    expect(placeholder).toContain('全量已落盘');
-    const match = /全量已落盘 (.+)]$/.exec(placeholder);
+    expect(placeholder).toContain('the full output is on disk at');
+    const match = /the full output is on disk at (.+)]$/.exec(placeholder);
     expect(match).not.toBeNull();
     expect(readFileSync(match![1]!, 'utf8')).toBe(big);
   });

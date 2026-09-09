@@ -6,11 +6,14 @@ import type { PlanModeHost } from '../../plan-mode';
 import { defineTool, type Tool } from '../tool';
 
 const enterInputSchema = z.object({
-  reason: z.string().optional().describe('进入计划模式的原因（一句话）'),
+  reason: z.string().optional().describe('Why you are entering plan mode (one sentence)'),
 });
 
 const exitInputSchema = z.object({
-  plan: z.string().min(1).describe('完整的实施计划（markdown），提交给用户审批'),
+  plan: z
+    .string()
+    .min(1)
+    .describe('The complete implementation plan (markdown), submitted for user approval'),
 });
 
 /**
@@ -23,10 +26,10 @@ export function createEnterPlanModeTool(host?: PlanModeHost): Tool {
   return defineTool({
     name: 'enter_plan_mode',
     description:
-      '进入计划模式：任务复杂、影响面大或方案存在取舍、需要先调研再动手时调用。' +
-      '进入后只能只读探索（write / edit / bash 等写/执行类工具会被拒绝）；' +
-      '调研完成后用 exit_plan_mode 提交实施计划，经用户批准后开始执行。' +
-      '简单明确的任务不要进入计划模式。',
+      'Enter plan mode: call this when a task is complex, wide-reaching, or involves a trade-off and you need to investigate before acting. ' +
+      'Inside plan mode only read-only exploration is allowed (write / edit / bash and other write or execute tools are refused). ' +
+      'When the investigation is done, submit the implementation plan with exit_plan_mode and start executing once the user approves. ' +
+      'Do not enter plan mode for simple, well-specified tasks.',
     inputSchema: enterInputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],
@@ -36,17 +39,21 @@ export function createEnterPlanModeTool(host?: PlanModeHost): Tool {
         : 'Enter plan mode',
     call: () => {
       if (host === undefined) {
-        return Promise.resolve({ output: '当前环境不支持计划模式（无会话状态）。', isError: true });
+        return Promise.resolve({
+          output: 'Plan mode is not supported in this environment (no session state).',
+          isError: true,
+        });
       }
       if (!host.enterPlanMode()) {
         return Promise.resolve({
-          output: '已在计划模式中，无需重复进入。完成只读调研后用 exit_plan_mode 提交计划。',
+          output:
+            'Already in plan mode — no need to enter again. Once the read-only investigation is done, submit the plan with exit_plan_mode.',
         });
       }
       return Promise.resolve({
         output:
-          '已进入计划模式：现在只能进行只读探索（read / glob / grep 等），写/执行类工具调用会被拒绝。' +
-          '调研完成后调用 exit_plan_mode 提交实施计划，经用户批准后开始执行。',
+          'Entered plan mode: only read-only exploration (read / glob / grep, ...) is possible now; write or execute tool calls are refused. ' +
+          'When the investigation is done, call exit_plan_mode to submit the implementation plan and start executing once the user approves.',
       });
     },
   });
@@ -62,9 +69,9 @@ export function createExitPlanModeTool(host?: PlanModeHost): Tool {
   return defineTool({
     name: 'exit_plan_mode',
     description:
-      '提交实施计划并请求退出计划模式。仅在计划模式中、已完成只读调研后调用；' +
-      '计划要具体到可直接执行（markdown：分步动作、每步涉及的文件、执行顺序、风险与验证方式）。' +
-      '用户批准后自动退出计划模式并开始执行；被拒绝时按反馈修订计划后重新提交。',
+      'Submit the implementation plan and request exit from plan mode. Call it only inside plan mode, after the read-only investigation is complete. ' +
+      'The plan must be concrete enough to execute directly (markdown: step-by-step actions, the files each step touches, ordering, risks, and how to verify). ' +
+      'Once the user approves, plan mode exits automatically and you start executing; if it is rejected, revise the plan per the feedback and submit again.',
     inputSchema: exitInputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],
@@ -74,11 +81,15 @@ export function createExitPlanModeTool(host?: PlanModeHost): Tool {
     },
     call: async (input, ctx) => {
       if (host === undefined) {
-        return { output: '当前环境不支持计划模式（无会话状态）。', isError: true };
+        return {
+          output: 'Plan mode is not supported in this environment (no session state).',
+          isError: true,
+        };
       }
       if (!host.isPlanMode()) {
         return {
-          output: '当前不在计划模式中，无需提交计划；请按现有权限模式直接继续。',
+          output:
+            'Not in plan mode, so there is no plan to submit; continue directly under the current permission mode.',
           isError: true,
         };
       }
@@ -88,15 +99,19 @@ export function createExitPlanModeTool(host?: PlanModeHost): Tool {
       );
       if (reply.approved) {
         host.exitPlanMode();
-        return { output: '计划已获批准，已退出计划模式。请严格按计划开始执行。' };
+        return {
+          output: 'The plan was approved and plan mode has exited. Start executing the plan exactly as written.',
+        };
       }
       if (ctx.signal.aborted) {
         return { output: 'interrupted by user', isError: true };
       }
       const feedback =
-        reply.feedback !== undefined && reply.feedback !== '' ? `用户反馈：${reply.feedback}。` : '';
+        reply.feedback !== undefined && reply.feedback !== ''
+          ? `User feedback: ${reply.feedback}. `
+          : '';
       return {
-        output: `计划被拒绝。${feedback}请修订计划后再次调用 exit_plan_mode 提交。`,
+        output: `The plan was rejected. ${feedback}Revise the plan and submit it again with exit_plan_mode.`,
         isError: true,
       };
     },

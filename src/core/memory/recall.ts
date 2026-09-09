@@ -15,12 +15,12 @@ export interface RelevantMemory {
   mtimeMs: number;
 }
 
-const SELECT_MEMORIES_SYSTEM_PROMPT = `你在为 MistyAgent（CLI 编码助手）挑选处理用户请求时用得上的记忆。你会收到用户的请求和一份记忆文件清单（文件名 + 简介）。
+const SELECT_MEMORIES_SYSTEM_PROMPT = `You are selecting memories that will help MistyAgent (a CLI coding assistant) handle the user's request. You receive the user's request and a manifest of memory files (filename + summary).
 
-从清单里选出确定会有帮助的记忆文件名（最多 ${MAX_SELECTED} 条），只输出一个 JSON 对象：{"selected": ["文件名", ...]}，不要输出任何其他内容。
-- 拿不准有没有用就不要选，宁缺毋滥；
-- 没有明显有用的记忆就返回空列表；
-- 如果给出了最近使用的工具列表，不要选那些工具的用法参考或 API 文档类记忆（助手正在用它们，对话里已有用法）；但关于这些工具的坑、警告、已知问题的记忆仍要选——正在使用时恰恰最需要它们。`;
+Pick the filenames of the memories that will definitely help (at most ${MAX_SELECTED}) and output only a single JSON object: {"selected": ["filename", ...]}. Output nothing else.
+- If you are unsure whether something helps, leave it out — fewer and better;
+- If no memory is clearly useful, return an empty list;
+- If a list of recently used tools is given, do not select usage references or API documentation for those tools (the assistant is already using them, and the usage is in the conversation); memories about pitfalls, warnings, and known issues with those tools are still worth selecting — they matter most exactly while the tool is in use.`;
 
 /** 把 provider 流的 text-delta 拼成完整文本；error part 直接抛给外层容错 */
 async function collectText(
@@ -99,12 +99,12 @@ export async function findRelevantMemories(deps: {
 
     const toolsSection =
       deps.recentTools !== undefined && deps.recentTools.length > 0
-        ? `\n\n最近使用的工具：${deps.recentTools.join(', ')}`
+        ? `\n\nRecently used tools: ${deps.recentTools.join(', ')}`
         : '';
     const text = await collectText(
       deps.provider,
       deps.model,
-      `Query: ${deps.query}\n\n可用记忆：\n${formatMemoryManifest(memories)}${toolsSection}`,
+      `Query: ${deps.query}\n\nAvailable memories:\n${formatMemoryManifest(memories)}${toolsSection}`,
       deps.signal,
     );
 

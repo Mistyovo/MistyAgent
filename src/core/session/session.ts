@@ -120,7 +120,7 @@ function prependRecalledMemories(recalled: readonly RelevantMemory[], text: stri
   const blocks = recalled.map((m) => `=== ${basename(m.path)} ===\n${m.content}`).join('\n\n');
   return (
     '<recalled-memories>\n' +
-    `以下记忆可能与本次请求相关（可能过时，引用前先验证）：\n\n${blocks}\n` +
+    `The following memories may be relevant to this request (they may be outdated — verify before relying on them):\n\n${blocks}\n` +
     `</recalled-memories>\n\n${text}`
   );
 }

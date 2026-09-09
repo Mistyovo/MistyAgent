@@ -15,18 +15,18 @@ const MAX_OUTPUT_CHARS = 30_000;
 const MAX_BUFFER_BYTES = 8 * 1024 * 1024;
 
 const inputSchema = z.object({
-  command: z.string().describe('要执行的 shell 命令'),
+  command: z.string().describe('Shell command to execute'),
   timeout: z
     .number()
     .int()
     .min(1)
     .optional()
-    .describe(`超时毫秒数，默认 ${DEFAULT_TIMEOUT_MS}（后台任务忽略此项）`),
+    .describe(`Timeout in milliseconds, default ${DEFAULT_TIMEOUT_MS} (ignored for background tasks)`),
   run_in_background: z
     .boolean()
     .optional()
     .describe(
-      'true 时后台执行：立即返回 taskId，用 task_output 查看输出、task_stop 终止；任务结束时会收到通知',
+      'When true, run in the background: returns a taskId immediately; inspect output with task_output and terminate with task_stop; you are notified when the task finishes',
     ),
 });
 
@@ -51,7 +51,7 @@ function formatOutput(stdout: string, stderr: string): string {
   return truncate(
     sections.join('\n'),
     MAX_OUTPUT_CHARS,
-    `[输出过长已截断，仅保留前 ${MAX_OUTPUT_CHARS} 字符]`,
+    `[Output truncated: only the first ${MAX_OUTPUT_CHARS} characters are kept]`,
   );
 }
 
@@ -143,11 +143,11 @@ export function createBashTool(tasks: TaskManager): Tool {
   return defineTool({
     name: 'bash',
     description:
-      '在 shell 中执行命令并返回 stdout/stderr（退出码非 0 会标注）。' +
-      `默认超时 ${DEFAULT_TIMEOUT_MS / 1000}s（慢命令用 timeout 调整），输出超过 ${MAX_OUTPUT_CHARS} 字符会被截断。` +
-      '长驻或耗时命令（dev server、watcher、大测试集）改用 run_in_background=true：立即返回 taskId，' +
-      '不阻塞会话，用 task_output 查看输出、task_stop 终止。' +
-      '读文件/找文件/搜内容优先用 read / glob / grep 专用工具。',
+      'Run a command in the shell and return stdout/stderr (a non-zero exit code is reported). ' +
+      `Times out after ${DEFAULT_TIMEOUT_MS / 1000}s by default (raise it with timeout for slow commands); output over ${MAX_OUTPUT_CHARS} characters is truncated. ` +
+      'For long-lived or slow commands (dev servers, watchers, large test suites) use run_in_background=true: it returns a taskId immediately, ' +
+      'does not block the session, and you inspect output with task_output and terminate with task_stop. ' +
+      'To read files, find files, or search content, prefer the dedicated read / glob / grep tools.',
     inputSchema,
     accesses: () => [{ kind: 'execute' }],
     describeCall: (input) => {
@@ -160,25 +160,28 @@ export function createBashTool(tasks: TaskManager): Tool {
         const task = tasks.start(input.command, ctx.cwd);
         return {
           output:
-            `后台任务 ${task.id} 已启动（pid ${task.pid ?? '未知'}）。\n` +
-            '用 task_output 查看输出；任务结束时会收到通知。',
+            `Background task ${task.id} started (pid ${task.pid ?? 'unknown'}).\n` +
+            'Use task_output to inspect its output; you are notified when it finishes.',
         };
       }
       const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS;
       const result = await execForeground(input.command, ctx.cwd, timeout, ctx.signal);
       const output = formatOutput(result.stdout, result.stderr);
       if (result.status === 'ok') {
-        return { output: output.length > 0 ? output : '(无输出)' };
+        return { output: output.length > 0 ? output : '(no output)' };
       }
       if (result.status === 'aborted') {
-        return { output: `命令被中断\n${output}`.trim(), isError: true };
+        return { output: `Command interrupted\n${output}`.trim(), isError: true };
       }
       if (result.status === 'timeout') {
-        return { output: `命令超时（${timeout}ms）已终止\n${output}`.trim(), isError: true };
+        return {
+          output: `Command timed out (${timeout}ms) and was terminated\n${output}`.trim(),
+          isError: true,
+        };
       }
       const code =
         typeof result.code === 'number' ? `exit code ${result.code}` : String(result.code);
-      return { output: `命令失败（${code}）\n${output}`.trim(), isError: true };
+      return { output: `Command failed (${code})\n${output}`.trim(), isError: true };
     },
   });
 }

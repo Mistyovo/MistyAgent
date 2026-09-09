@@ -94,28 +94,30 @@ export async function searchDuckDuckGo(
   const html = await response.text();
   const results = parseDuckDuckGoLite(html);
   if (results.length === 0 && !/no results/i.test(html)) {
-    throw new Error('未从响应中解析到搜索结果（可能确实无结果、触发限流或页面结构已变化）');
+    throw new Error(
+      'Could not parse any search results from the response (there may genuinely be no results, or the request was rate-limited, or the page structure changed)',
+    );
   }
   return results;
 }
 
 const inputSchema = z.object({
-  query: z.string().describe('搜索查询词'),
+  query: z.string().describe('Search query'),
   limit: z
     .number()
     .int()
     .min(1)
     .max(MAX_LIMIT)
     .optional()
-    .describe(`返回结果条数，默认 ${DEFAULT_LIMIT}，最多 ${MAX_LIMIT}`),
+    .describe(`Number of results to return, default ${DEFAULT_LIMIT}, maximum ${MAX_LIMIT}`),
 });
 
 export const webSearchTool = defineTool({
   name: 'web_search',
   description:
-    '用 DuckDuckGo 搜索网页，返回编号结果列表（标题、链接、摘要）。' +
-    '基于 DuckDuckGo lite 免 key 接口，可能受地区网络或频率限制；' +
-    '拿到结果链接后可用 web_fetch 抓取页面详情。',
+    'Search the web with DuckDuckGo and return a numbered result list (title, link, snippet). ' +
+    'It uses the keyless DuckDuckGo lite endpoint, so regional network conditions or rate limits may apply. ' +
+    'Once you have result links, use web_fetch to retrieve the page contents.',
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],
@@ -127,15 +129,15 @@ export const webSearchTool = defineTool({
       results = await searchDuckDuckGo(input.query, { signal: ctx.signal });
     } catch (error) {
       if (ctx.signal.aborted) {
-        return errorResult(`搜索被中断：${input.query}`);
+        return errorResult(`Search interrupted: ${input.query}`);
       }
       if (isTimeoutError(error)) {
-        return errorResult(`搜索超时（${DEFAULT_WEB_TIMEOUT_MS / 1000}s）：${input.query}`);
+        return errorResult(`Search timed out (${DEFAULT_WEB_TIMEOUT_MS / 1000}s): ${input.query}`);
       }
-      return errorResult(`搜索失败：${errorMessage(error)}`);
+      return errorResult(`Search failed: ${errorMessage(error)}`);
     }
     if (results.length === 0) {
-      return { output: `没有找到相关结果："${input.query}"` };
+      return { output: `No results found for "${input.query}"` };
     }
     const body = results
       .slice(0, input.limit ?? DEFAULT_LIMIT)

@@ -67,7 +67,7 @@ describe('runMemoryExtraction', () => {
     expect(result.written).toEqual([topicFile]);
     expect(await readFile(topicFile, 'utf8')).toBe(USER_MEMORY);
     expect(existsSync(path.join(dir, 'MEMORY.md'))).toBe(true);
-    expect(provider.requests[0]!.systemPrompt).toContain('记忆提取子代理');
+    expect(provider.requests[0]!.systemPrompt).toContain('memory extraction subagent');
     expect(provider.requests[0]!.tools.map((t) => t.name)).toEqual([
       'read',
       'glob',
@@ -99,7 +99,7 @@ describe('runMemoryExtraction', () => {
     const secondStepMessages = provider.requests[1]!.messages;
     expect(
       secondStepMessages.some(
-        (m) => m.role === 'tool' && m.isError === true && m.content.includes('记忆目录'),
+        (m) => m.role === 'tool' && m.isError === true && m.content.includes('memory directory'),
       ),
     ).toBe(true);
   });

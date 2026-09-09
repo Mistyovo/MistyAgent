@@ -57,7 +57,10 @@ export class PlanApprovalManager {
 
   request(request: PlanApprovalRequest, signal?: AbortSignal): Promise<PlanApprovalReply> {
     if (this.pending.has(request.id)) {
-      return Promise.resolve({ approved: false, feedback: `重复的计划审批请求 id：${request.id}` });
+      return Promise.resolve({
+        approved: false,
+        feedback: `Duplicate plan approval request id: ${request.id}`,
+      });
     }
     if (signal?.aborted === true) {
       return Promise.resolve(interruptedReply);
@@ -100,12 +103,12 @@ export class PlanApprovalManager {
 /** 计划模式的 system prompt 动态段：每步组装（plan 状态可在一个 turn 内被工具改变） */
 export function buildPlanModePrompt(): string {
   return [
-    '当前处于计划模式（plan mode）：先只读探索，再提交计划。',
-    '- 只能使用只读工具（read / glob / grep / web_search / web_fetch 等）；write / edit / bash 等写/执行类调用会被权限直接拒绝，不要尝试。',
-    '- 探索要聚焦：先定位与任务相关的文件和现有实现，再设计方案，不要泛读整个代码库。',
-    '- 调研充分后调用 exit_plan_mode 提交完整的实施计划（markdown：分步动作、每步涉及的文件、执行顺序、风险、如何验证）。',
-    '- 计划要具体到可直接执行：引用真实路径与符号，写清每步的验证方式，不要停留在方向性描述。',
-    '- 用户批准后自动退出计划模式，随后严格按计划执行；被拒绝时按反馈修订计划，再次调用 exit_plan_mode 提交。',
-    '- 不要重复调用 enter_plan_mode（已在计划模式中）。',
+    'You are currently in plan mode: investigate read-only first, then submit a plan.',
+    '- Only read-only tools are available (read / glob / grep / web_search / web_fetch, ...); write or execute calls such as write / edit / bash are rejected by permissions outright — do not attempt them.',
+    '- Keep the investigation focused: locate the files and existing implementations relevant to the task, then design the approach. Do not read broadly across the whole codebase.',
+    '- Once the investigation is sufficient, call exit_plan_mode to submit the complete implementation plan (markdown: step-by-step actions, the files each step touches, execution order, risks, and how to verify).',
+    '- The plan must be concrete enough to execute directly: cite real paths and symbols and state how each step is verified — do not stop at directional description.',
+    '- After the user approves, plan mode exits automatically and you execute the plan strictly as written; if it is rejected, revise the plan per the feedback and submit it again with exit_plan_mode.',
+    '- Do not call enter_plan_mode again (you are already in plan mode).',
   ].join('\n');
 }

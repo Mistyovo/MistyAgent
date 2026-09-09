@@ -76,7 +76,7 @@ describe('maybeCompactHistory', () => {
     expect(provider.requests[0]!.messages).toHaveLength(8);
     expect(provider.requests[0]!.tools).toEqual([]);
     expect(messages).toHaveLength(5);
-    expect(messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n这是摘要' });
+    expect(messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n这是摘要' });
     expect(messages.slice(1)).toEqual(makeMessages(6).slice(-4));
   });
 
@@ -148,7 +148,7 @@ describe('maybeCompactHistory', () => {
 
     expect(result).not.toBeNull();
     expect(provider.requests).toHaveLength(1);
-    expect(messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要' });
+    expect(messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要' });
   });
 });
 
@@ -239,7 +239,7 @@ describe('压缩后回注最近读过的文件', () => {
     const result = await compactHistory({ provider, model: 'fake', messages, cwd: dir });
 
     expect(result).not.toBeNull();
-    expect(messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要' });
+    expect(messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要' });
     // 回注消息在摘要之后、保留尾部之前，按读取先后排列
     expect(messages[1]!.role).toBe('user');
     expect(messages[1]!.content).toContain('alpha.ts');
@@ -267,7 +267,7 @@ describe('压缩后回注最近读过的文件', () => {
 
     expect(result).not.toBeNull();
     const reinjected = messages.filter(
-      (m) => m.role === 'user' && m.content.includes('重新加载当前内容'),
+      (m) => m.role === 'user' && m.content.includes('reloaded with its current content'),
     );
     expect(reinjected).toHaveLength(1);
     expect(reinjected[0]!.content).toContain('kept.ts');
@@ -297,7 +297,7 @@ describe('压缩后回注最近读过的文件', () => {
 
     expect(result).not.toBeNull();
     const reinjected = messages.filter(
-      (m) => m.role === 'user' && m.content.includes('重新加载当前内容'),
+      (m) => m.role === 'user' && m.content.includes('reloaded with its current content'),
     );
     // 预算 20KB：保留最新的 f3、f2，丢弃最旧的 f1
     expect(reinjected).toHaveLength(2);
@@ -323,11 +323,11 @@ describe('压缩后回注最近读过的文件', () => {
 
     expect(result).not.toBeNull();
     const reinjected = messages.filter(
-      (m) => m.role === 'user' && m.content.includes('重新加载当前内容'),
+      (m) => m.role === 'user' && m.content.includes('reloaded with its current content'),
     );
     expect(reinjected).toHaveLength(1);
     expect(reinjected[0]!.content.length).toBeLessThanOrEqual(21_000);
-    expect(reinjected[0]!.content).toContain('截断');
+    expect(reinjected[0]!.content).toContain('truncated');
   });
 
   it('不提供 cwd 时不回注（保持原行为）', async () => {
@@ -342,6 +342,6 @@ describe('压缩后回注最近读过的文件', () => {
     const result = await compactHistory({ provider, model: 'fake', messages });
 
     expect(result).not.toBeNull();
-    expect(messages.some((m) => m.content.includes('重新加载当前内容'))).toBe(false);
+    expect(messages.some((m) => m.content.includes('reloaded with its current content'))).toBe(false);
   });
 });

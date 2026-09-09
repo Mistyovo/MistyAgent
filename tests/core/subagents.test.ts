@@ -92,7 +92,7 @@ describe('parseSubagentMarkdown', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.warning).toContain('不合法');
+      expect(result.warning).toContain('Invalid name');
     }
   });
 });

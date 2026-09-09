@@ -125,7 +125,7 @@ describe('resumeSession', () => {
   });
 
   it('文件不存在抛错', () => {
-    expect(() => resumeSession(join(root, 'missing.jsonl'))).toThrow('会话文件不存在');
+    expect(() => resumeSession(join(root, 'missing.jsonl'))).toThrow('Session file not found');
   });
 });
 

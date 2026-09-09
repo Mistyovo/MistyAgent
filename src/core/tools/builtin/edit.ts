@@ -10,10 +10,16 @@ import { displayPath, errorResult, resolvePath, statKind } from './fs-utils';
 import { hasRead, recordWritten, staleFileError } from './read-registry';
 
 const inputSchema = z.object({
-  path: z.string().describe('文件路径，相对 cwd 或绝对路径'),
-  old_string: z.string().min(1).describe('要被替换的原始字符串，必须在文件中唯一（除非 replace_all）'),
-  new_string: z.string().describe('替换后的字符串'),
-  replace_all: z.boolean().optional().describe('替换所有出现位置，默认 false'),
+  path: z.string().describe('File path, relative to cwd or absolute'),
+  old_string: z
+    .string()
+    .min(1)
+    .describe('Exact text to replace; must be unique in the file unless replace_all is set'),
+  new_string: z.string().describe('Replacement text'),
+  replace_all: z
+    .boolean()
+    .optional()
+    .describe('Replace every occurrence, default false'),
 });
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -54,10 +60,10 @@ function findNormalizedLineMatches(fileLines: string[], oldLines: string[]): num
 export const editTool = defineTool({
   name: 'edit',
   description:
-    '对文件做精确字符串替换：把 old_string 替换为 new_string。' +
-    'old_string 必须与文件内容逐字符一致（含缩进与空行）且恰好出现一次——不唯一时多带几行上下文使其唯一；' +
-    '缩进/行尾空白略有偏差时可用行对齐容错匹配兜底。要替换全部出现位置用 replace_all。' +
-    '修改前必须先 read 目标文件（未读过的文件会报错）；文件被外部改动后需重新 read。',
+    'Replace an exact string in a file: old_string becomes new_string. ' +
+    'old_string must match the file character for character (including indentation and blank lines) and occur exactly once — when it is not unique, add a few more lines of context to make it unique. ' +
+    'Whitespace or line-ending differences are tolerated by a line-aligned fallback match. Set replace_all to replace every occurrence. ' +
+    'You must read the target file first (an unread file is refused); a file changed on disk since you read it must be re-read.',
   inputSchema,
   accesses: (input) => [{ kind: 'write', paths: [input.path] }],
   describeCall: (input) => `Edit ${input.path}`,
@@ -66,11 +72,11 @@ export const editTool = defineTool({
     const shown = displayPath(ctx.cwd, absolute);
     const stats = await statKind(absolute);
     if (!stats.isFile) {
-      return errorResult(`文件不存在：${shown}`);
+      return errorResult(`File not found: ${shown}`);
     }
     if (!hasRead(absolute)) {
       return errorResult(
-        `本会话尚未读取过 ${shown}：先 read 该文件，基于真实内容再做替换。`,
+        `${shown} has not been read in this session: read it first, then replace based on the real content.`,
       );
     }
     const stale = await staleFileError(absolute, shown);
@@ -85,8 +91,8 @@ export const editTool = defineTool({
       let note: string;
       if (occurrences > 1 && !replaceAll) {
         return errorResult(
-          `old_string 在 ${shown} 中出现 ${occurrences} 次，不唯一；` +
-            '请提供更多上下文使其唯一，或设置 replace_all',
+          `old_string occurs ${occurrences} times in ${shown} and is not unique; ` +
+            'add more context to make it unique, or set replace_all',
         );
       }
       if (occurrences > 0) {
@@ -98,7 +104,7 @@ export const editTool = defineTool({
           updated =
             content.slice(0, index) + input.new_string + content.slice(index + input.old_string.length);
         }
-        note = `替换 ${replaceAll ? occurrences : 1} 处`;
+        note = `replaced ${replaceAll ? occurrences : 1} occurrence(s)`;
       } else {
         const eol = content.includes('\r\n') ? '\r\n' : '\n';
         const fileLines = content.split(eol);
@@ -106,13 +112,13 @@ export const editTool = defineTool({
         const starts = findNormalizedLineMatches(fileLines, oldLines);
         if (starts.length === 0) {
           return errorResult(
-            `old_string 未在 ${shown} 中找到（已尝试空白/换行容错匹配）；请重新 read 确认原文后重试`,
+            `old_string was not found in ${shown} (a whitespace/line-ending tolerant match was already attempted); read the file again to confirm the exact text and retry`,
           );
         }
         if (starts.length > 1 && !replaceAll) {
           return errorResult(
-            `old_string 容错匹配到 ${starts.length} 处，不唯一；` +
-              '请提供更多上下文使其唯一，或设置 replace_all',
+            `old_string matched ${starts.length} places with the tolerant matcher and is not unique; ` +
+              'add more context to make it unique, or set replace_all',
           );
         }
         const newLines = input.new_string.replaceAll('\r\n', '\n').split('\n');
@@ -121,13 +127,13 @@ export const editTool = defineTool({
           fileLines.splice(targets[index]!, oldLines.length, ...newLines);
         }
         updated = fileLines.join(eol);
-        note = `容错匹配替换 ${targets.length} 处（原文空白/换行与文件略有差异）`;
+        note = `tolerant match replaced ${targets.length} occurrence(s) (whitespace or line endings differed slightly from the file)`;
       }
       await writeFile(absolute, updated, 'utf8');
       await recordWritten(absolute);
-      return { output: `已编辑 ${shown}（${note}）` };
+      return { output: `Edited ${shown} (${note})` };
     } catch (error) {
-      return errorResult(`编辑失败：${errorMessage(error)}`);
+      return errorResult(`Edit failed: ${errorMessage(error)}`);
     }
   },
 });

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 export const todoItemSchema = z.object({
-  content: z.string().min(1).describe('任务内容（已完成任务保持原文，不要改写）'),
-  status: z.enum(['pending', 'in_progress', 'done']).describe('任务状态'),
-  activeForm: z.string().min(1).optional().describe('任务进行中时的展示文案（如「正在…」）'),
+  content: z.string().min(1).describe('Task content (keep completed tasks verbatim; do not rewrite)'),
+  status: z.enum(['pending', 'in_progress', 'done']).describe('Task status'),
+  activeForm: z.string().min(1).optional().describe('Label shown while the task is in progress (e.g. "Reading files...")'),
 });
 
 export type TodoItem = z.output<typeof todoItemSchema>;
@@ -19,13 +19,13 @@ export type TodoListener = (todos: TodoItem[]) => void;
 export function validateTodos(next: TodoItem[], prev: TodoItem[]): string | null {
   const active = next.filter((todo) => todo.status === 'in_progress');
   if (active.length > 1) {
-    return `同一时刻至多一个 in_progress 任务（收到 ${active.length} 个）`;
+    return `At most one in_progress task at a time (got ${active.length})`;
   }
   for (let index = 0; index < prev.length && index < next.length; index += 1) {
     const before = prev[index]!;
     const after = next[index]!;
     if (before.status === 'done' && after.status === 'done' && before.content !== after.content) {
-      return `已完成的任务不能修改内容：「${before.content}」→「${after.content}」`;
+      return `Completed tasks cannot be modified: "${before.content}" -> "${after.content}"`;
     }
   }
   return null;

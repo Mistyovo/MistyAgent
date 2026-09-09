@@ -23,8 +23,8 @@ describe('StallGuard', () => {
     expect(guard.recordStep([readCall], ['内容A'])).toBeNull(); // 2
     expect(guard.recordStep([readCall], ['内容A'])).toBeNull(); // 3
     const steer = guard.recordStep([readCall], ['内容A']); // 4 → steer
-    expect(steer).toContain('没有获得任何新信息');
-    expect(steer).toContain('重复读取');
+    expect(steer).toContain('produced no new information');
+    expect(steer).toContain('re-read content already seen');
     expect(guard.recordStep([readCall], ['内容A'])).toBeNull(); // 每 turn 最多一次
   });
 
@@ -114,7 +114,7 @@ function makeDeps(
 
 function steers(deps: RunTurnDeps): UserMessage[] {
   return deps.messages.filter(
-    (m): m is UserMessage => m.role === 'user' && m.content.includes('没有获得任何新信息'),
+    (m): m is UserMessage => m.role === 'user' && m.content.includes('produced no new information'),
   );
 }
 
@@ -154,7 +154,7 @@ describe('零产出停滞检测（runTurn 集成）', () => {
     // steer 进入最后一步请求的历史
     const lastRequest = provider.requests[5]!;
     expect(lastRequest.messages.at(-1)?.role).toBe('user');
-    expect((lastRequest.messages.at(-1) as UserMessage).content).toContain('没有获得任何新信息');
+    expect((lastRequest.messages.at(-1) as UserMessage).content).toContain('produced no new information');
   });
 
   it('doom-loop 介入的步不计入 barren，不再叠加 steer', async () => {

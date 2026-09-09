@@ -91,18 +91,17 @@ function diffLineColor(toolName: string, line: string, theme: Theme): string | n
 }
 
 /**
- * 审批弹窗（对齐 Claude Code 的权限确认样式）：数字键 1/2/3 直接选择，
- * ←/→ 移动高亮，Enter 确认，Esc 拒绝。'always' 选项复用 sessionRuleFor
- * 展示会话级放行规则的粒度。
+ * 审批弹窗：数字键 1/2/3 直接选择，←/→ 移动高亮，Enter 确认，Esc 拒绝。
+ * 'always' 选项复用 sessionRuleFor 展示会话级放行规则的粒度。
  */
 export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   const options: Option[] = [
-    { decision: 'once', label: 'Yes' },
+    { decision: 'once', label: 'Allow once' },
     {
       decision: 'always',
-      label: `Yes, and don't ask again for ${describeRule(sessionRuleFor(request, cwd))}`,
+      label: `Always allow ${describeRule(sessionRuleFor(request, cwd))} this session`,
     },
-    { decision: 'reject', label: 'No, and tell Misty what to do differently (esc)' },
+    { decision: 'reject', label: 'Deny (esc)' },
   ];
   const [selection, setSelection] = useState(0);
 
@@ -138,7 +137,7 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
   const theme = getTheme();
   const wrap = useTerminalTextWrap();
   return (
-    <DialogFrame title={`Permission needed: ${request.describeCall}`} color={theme.warning}>
+    <DialogFrame title={`Allow ${request.describeCall}?`} color={theme.warning}>
       <Text dimColor>{wrap(request.reason, 3)}</Text>
       {detail.length > 0 && (
         <Box flexDirection="column">
@@ -160,7 +159,7 @@ export function ApprovalDialog({ request, cwd, onReply }: ApprovalDialogProps) {
           label={option.label}
         />
       ))}
-      <Text dimColor>{wrap('←/→ move · 1-3 select · enter confirm · esc reject', 3)}</Text>
+      <Text dimColor>{wrap('1-3 choose · ←→ move · enter ok · esc deny', 3)}</Text>
     </DialogFrame>
   );
 }

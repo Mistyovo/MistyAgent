@@ -7,12 +7,12 @@ import { completeLinesOnly } from '../controllers/stream-utils';
 import { getTerminalWidthMode, useTerminalTextWrap } from '../terminal-text';
 import { getTheme } from '../theme';
 
-/** Claude Code 风格 spinner 帧；老式 Windows 控制台（GBK 点阵）对这类字符支持差，回退 ASCII */
-const CLAUDE_FRAMES = ['✻', '✽', '✶', '✳'];
+/** 月相轮转 spinner（Misty 的雾夜意象）；老式 Windows 控制台（GBK 点阵）对这类字符支持差，回退 ASCII */
+const MOON_FRAMES = ['◐', '◓', '◑', '◒'];
 const ASCII_FRAMES = ['-', '\\', '|', '/'];
 
 function spinnerFrames(): string[] {
-  return getTerminalWidthMode() === 'legacy-cjk' ? ASCII_FRAMES : CLAUDE_FRAMES;
+  return getTerminalWidthMode() === 'legacy-cjk' ? ASCII_FRAMES : MOON_FRAMES;
 }
 
 function Spinner({ label }: { label: string }) {
@@ -31,7 +31,7 @@ function Spinner({ label }: { label: string }) {
     <Text>
       <Text color={theme.spinner}>{frames[index % frames.length] ?? ''}</Text>
       <Text dimColor>{` ${label}`}</Text>
-      <Text dimColor>{'  · esc to interrupt'}</Text>
+      <Text dimColor>{'  (esc to stop)'}</Text>
     </Text>
   );
 }

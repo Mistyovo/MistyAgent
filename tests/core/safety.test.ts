@@ -86,11 +86,11 @@ describe('checkSensitivePath', () => {
   it('reason 说明命中的保护项', () => {
     expect(checkSensitivePath(abs('.git', 'config'))).toEqual({
       sensitive: true,
-      reason: 'Git 版本库目录 .git/',
+      reason: 'Git repository directory .git/',
     });
     expect(checkSensitivePath(abs('.env.local'))).toEqual({
       sensitive: true,
-      reason: '密钥文件 .env*',
+      reason: 'Secrets file .env*',
     });
   });
 });
@@ -104,14 +104,14 @@ describe('敏感路径护栏接入 pipeline', () => {
     );
     expect(decision).toEqual({
       kind: 'deny',
-      reason: '受保护路径：.git/config（Git 版本库目录 .git/）',
+      reason: 'Protected path: .git/config (Git repository directory .git/)',
     });
   });
 
   it('default 模式写 .git/HEAD 同样 deny', () => {
     const decision = evaluatePermission(writeTool, { path: '.git/HEAD', content: 'x' }, makeCtx());
     expect(decision.kind).toBe('deny');
-    expect(decision.kind === 'deny' && decision.reason).toContain('受保护路径');
+    expect(decision.kind === 'deny' && decision.reason).toContain('Protected path');
   });
 
   it('edit src/.env 在 acceptEdits 下也 deny', () => {
@@ -121,7 +121,7 @@ describe('敏感路径护栏接入 pipeline', () => {
       makeCtx({ mode: 'acceptEdits' }),
     );
     expect(decision.kind).toBe('deny');
-    expect(decision.kind === 'deny' && decision.reason).toContain('密钥文件');
+    expect(decision.kind === 'deny' && decision.reason).toContain('Secrets file');
   });
 
   it('input.path 为绝对路径同样命中', () => {
@@ -176,7 +176,7 @@ describe('敏感路径护栏接入 pipeline', () => {
       { path: '.git/config', content: 'x' },
       makeCtx({ rules: [{ action: 'deny', tool: 'Write', pattern: '.git/**' }] }),
     );
-    expect(decision.kind === 'deny' && decision.reason).toContain('deny 规则');
+    expect(decision.kind === 'deny' && decision.reason).toContain('Denied by deny rule');
   });
 
   it('v1 边界：bash 命令内容不解析，bypass 下 bash 重定向写 .git 不拦', () => {

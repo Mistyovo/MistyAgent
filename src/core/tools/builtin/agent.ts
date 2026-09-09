@@ -28,26 +28,38 @@ const SUBAGENT_MAX_STEPS = 30;
 const MAX_OUTPUT_CHARS = 30_000;
 
 const taskItemSchema = z.object({
-  description: z.string().describe('一句话描述这个子任务'),
-  prompt: z.string().describe('交给子代理的完整任务描述（它看不到主会话历史，必须自包含）'),
-  subagent_type: z.string().describe('子代理类型；可用清单见工具描述'),
+  description: z.string().describe('One-line description of this subtask'),
+  prompt: z
+    .string()
+    .describe(
+      'The complete task description handed to the subagent (it cannot see the main session history, so it must be self-contained)',
+    ),
+  subagent_type: z.string().describe('Subagent type; the available list is in the tool description'),
 });
 
 /** 批量并行的单个任务；字段与单发模式三字段同形 */
 type BatchTaskInput = z.output<typeof taskItemSchema>;
 
 const inputSchema = z.object({
-  description: z.string().optional().describe('一句话描述这个子任务（单发模式必填）'),
+  description: z
+    .string()
+    .optional()
+    .describe('One-line description of this subtask (required in single-task mode)'),
   prompt: z
     .string()
     .optional()
-    .describe('交给子代理的完整任务描述（它看不到主会话历史，必须自包含；单发模式必填）'),
-  subagent_type: z.string().optional().describe('子代理类型；可用清单见工具描述（单发模式必填）'),
+    .describe(
+      'The complete task description handed to the subagent (it cannot see the main session history, so it must be self-contained; required in single-task mode)',
+    ),
+  subagent_type: z
+    .string()
+    .optional()
+    .describe('Subagent type; the available list is in the tool description (required in single-task mode)'),
   run_in_background: z
     .boolean()
     .optional()
     .describe(
-      'true 时后台运行：立即返回 taskId，用 task_output 查看进度与最终结果（block=true 可挂起等待），task_stop 中断；结束时收到通知',
+      'When true, run in the background: returns a taskId immediately; inspect progress and the final result with task_output (block=true waits), interrupt with task_stop; you are notified when it finishes',
     ),
   tasks: z
     .array(taskItemSchema)
@@ -55,7 +67,7 @@ const inputSchema = z.object({
     .max(8)
     .optional()
     .describe(
-      '并行批量模式：一次启动 1-8 个互相独立的子代理并发执行，结果按任务分节聚合返回；提供时忽略单发字段',
+      'Parallel batch mode: start 1-8 mutually independent subagents at once and get results aggregated section by section; when given, the single-task fields are ignored',
     ),
 });
 
@@ -67,18 +79,19 @@ const READONLY_TOOL_NAMES = new Set(['read', 'glob', 'grep', 'web_fetch', 'web_s
 
 const ROLE_PROMPTS: Record<string, string> = {
   explore:
-    '你是代码探索子代理。用只读工具（read / glob / grep）在代码库中定位与任务相关的实现。' +
-    '结论自包含、具体：先给一段总体结论，再列出涉及的文件与行号（path:line）及每处的一句话摘要、' +
-    '与任务直接相关的发现。引用真实符号名与路径，不要写"某处大概"这类模糊描述。',
+    'You are a code exploration subagent. Use the read-only tools (read / glob / grep) to locate the implementation relevant to the task in the codebase. ' +
+    'Your conclusion must be self-contained and specific: open with an overall finding, then list the files and line numbers involved (path:line) with a one-line summary of each, ' +
+    'and the discoveries directly relevant to the task. Cite real symbol names and paths — never write vague phrases like "somewhere around".',
   plan:
-    '你是实现规划子代理。用只读工具（read / glob / grep）了解代码现状，输出一份可直接执行的实现计划：' +
-    '分步动作（每步改哪个文件、做什么）、步骤顺序与依赖、风险点、验证方式（跑什么命令确认）。' +
-    '计划基于真实代码：引用具体文件与符号，不要凭空假设。',
+    'You are an implementation planning subagent. Use the read-only tools (read / glob / grep) to understand the current state of the code, then produce an implementation plan that can be executed directly: ' +
+    'step-by-step actions (which file each step changes and what it does), the order and dependencies between steps, the risks, and how to verify (which commands to run). ' +
+    'Base the plan on real code: cite concrete files and symbols, never assumptions.',
 };
 
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  explore: '代码探索：定位实现、输出涉及的文件与行号、关键逻辑摘要（只读）',
-  plan: '实现规划：分析代码现状，产出分步实现计划（只读）',
+  explore:
+    'Code exploration: locate implementations, report the files and line numbers involved, summarize key logic (read-only)',
+  plan: 'Implementation planning: analyze the current code and produce a step-by-step implementation plan (read-only)',
 };
 
 /** 创建 agent 工具所需的宿主能力，registry 创建时闭包注入 */
@@ -121,16 +134,16 @@ function availableEntries(host: AgentToolHost): SubagentEntry[] {
 }
 
 function buildDescription(host: AgentToolHost): string {
-  const lines = availableEntries(host).map((entry) => `- ${entry.name}：${entry.description}`);
+  const lines = availableEntries(host).map((entry) => `- ${entry.name}: ${entry.description}`);
   return (
-    '启动子代理处理独立子任务：它在独立上下文与消息历史里工作，探索过程不占用本会话上下文，只把最终结论带回。' +
-    '适用于大范围代码探索 / 检索、互相独立的并行子任务。\n' +
-    '可用子代理类型（subagent_type）：\n' +
+    'Start a subagent for an independent subtask: it works in its own context and message history, so the exploration does not consume this session\'s context, and it brings back only its final conclusion. ' +
+    'Suited to wide code exploration / searching and to mutually independent parallel subtasks.\n' +
+    'Available subagent types (subagent_type):\n' +
     `${lines.join('\n')}\n` +
-    '子代理看不到本会话历史，prompt 必须自包含：写清目标、范围（涉及目录 / 模块）、已知线索与期望的输出格式。\n' +
-    '前台调用阻塞至其返回最终结论文本；run_in_background=true 时立即返回 taskId 后台运行（用 task_output 取结果）。\n' +
-    '批量并行：tasks 传入 1-8 个 { description, prompt, subagent_type }，适用于互相独立、可并行的子任务；' +
-    '并发执行，结果按任务分节聚合返回，部分失败不影响其他任务。有依赖关系的子任务不要放进同一批。'
+    'A subagent cannot see this session history, so the prompt must be self-contained: state the goal, the scope (directories / modules involved), known leads, and the output format you expect.\n' +
+    'A foreground call blocks until it returns its final conclusion text; with run_in_background=true it returns a taskId immediately and runs in the background (collect the result with task_output).\n' +
+    'Parallel batch: pass 1-8 { description, prompt, subagent_type } items in tasks for mutually independent, parallelizable subtasks; ' +
+    'they run concurrently and the results are aggregated section by section, with one failure not affecting the others. Do not put subtasks that depend on each other in the same batch.'
   );
 }
 
@@ -154,14 +167,14 @@ interface SubagentSpec {
 
 function environmentLines(cwd: string, writable: boolean): string[] {
   const environment =
-    platform() === 'win32' ? '运行环境为 Windows。' : `运行环境：${platform()}。`;
+    platform() === 'win32' ? 'Environment: Windows.' : `Environment: ${platform()}.`;
   return [
     writable
-      ? '你没有交互审批能力：需要审批的操作会被自动拒绝，届时改用只读方式获取信息，' +
-        '或在最终结论中说明需要主代理代为执行的写/执行操作。'
-      : '不要修改任何文件；你没有交互能力。最终结论文本会原样交回主代理，务必自包含且具体（含文件路径与行号）。',
+      ? 'You have no interactive approval capability: an operation that needs approval is automatically rejected. When that happens, gather the information read-only instead, ' +
+        'or state in your final conclusion which write or execute operations the main agent should perform on your behalf.'
+      : 'Do not modify any file; you have no interactive capability. Your final conclusion text is handed back to the main agent verbatim, so it must be self-contained and specific (with file paths and line numbers).',
     '',
-    `当前工作目录：${cwd}（工具调用中的相对路径都相对它解析）。`,
+    `Current working directory: ${cwd} (relative paths in tool calls resolve against it).`,
     environment,
   ];
 }
@@ -175,10 +188,10 @@ function boardPromptSection(host: AgentToolHost): string | null {
     return null;
   }
   const lines = [
-    '本任务有一块共享证据板（与同伴子代理共享）；动手前先读下方板内容。',
-    '工作中确认的关键事实用独占一行 "VERIFIED_FACT: <一行客观结论>" 输出，' +
-      '排除的方向用独占一行 "DEADEND: <一行结论>" 输出。',
-    '只写已在真实工具输出中验证过的客观内容，不要复述板上已有条目。',
+    'This task has a shared evidence board (shared with fellow subagents); read the board below before you start.',
+    'Output each key fact you confirm on its own line as "VERIFIED_FACT: <one-line objective conclusion>", ' +
+      'and each direction you rule out on its own line as "DEADEND: <one-line conclusion>".',
+    'Only write objective content you have verified in real tool output, and do not restate entries already on the board.',
   ];
   if (!board.isEmpty()) {
     lines.push('', board.render());
@@ -210,9 +223,9 @@ function resolveSpec(
   const def = host.subagents?.find((candidate) => candidate.name === type);
   if (def === undefined) {
     const available = availableEntries(host)
-      .map((entry) => `${entry.name}（${entry.description}）`)
-      .join('、');
-    return { ok: false, error: `未知子代理类型：${type}。可用类型：${available}` };
+      .map((entry) => `${entry.name} (${entry.description})`)
+      .join(', ');
+    return { ok: false, error: `Unknown subagent type: ${type}. Available types: ${available}` };
   }
   const pool = buildToolPool(host.tasks);
   const requested = def.tools ?? ['read', 'glob', 'grep'];
@@ -230,8 +243,8 @@ function resolveSpec(
     return {
       ok: false,
       error:
-        `子代理 ${type} 声明了未知工具：${unknown.join(', ')}。` +
-        `可用工具：${[...pool.keys()].join(', ')}`,
+        `Subagent ${type} declares unknown tools: ${unknown.join(', ')}. ` +
+        `Available tools: ${[...pool.keys()].join(', ')}`,
     };
   }
   const writable = requested.some((name) => !READONLY_TOOL_NAMES.has(name));
@@ -272,8 +285,8 @@ const SALVAGE_MAX_STEPS = 2;
 
 /** 对标 Cairn execute→conclude：探索烂尾时强令只总结已验证结论 */
 const SALVAGE_MESSAGE =
-  '你已被要求立即停止探索：只总结已在真实工具输出中确认过的结论与发现，' +
-  '未验证的明确标注『未验证』；禁止调用工具、禁止继续探索。';
+  'You have been told to stop exploring immediately: summarize only the conclusions and findings already confirmed in real tool output, ' +
+  'mark anything unverified explicitly as "unverified", and do not call any tool or continue exploring.';
 
 function harvestToBoard(host: AgentToolHost, type: string, text: string): void {
   if (host.board === undefined) {
@@ -309,12 +322,12 @@ async function runSubagent(deps: SubagentRunDeps): Promise<ToolResult> {
     await runTurn({ ...baseTurn, tools: [], maxSteps: SALVAGE_MAX_STEPS });
     text = lastAssistantText(messages);
     if (text !== '' && (result.stopReason === 'max-steps' || result.stopReason === 'error')) {
-      salvageNote = '子代理未正常收官，以下为收尾总结';
+      salvageNote = 'The subagent did not wrap up normally; the following is its salvage summary';
     }
   }
   if (text === '') {
     return {
-      output: `子代理没有产出文本结论（stopReason: ${result.stopReason}）`,
+      output: `The subagent produced no text conclusion (stopReason: ${result.stopReason})`,
       isError: true,
     };
   }
@@ -323,10 +336,10 @@ async function runSubagent(deps: SubagentRunDeps): Promise<ToolResult> {
   const output = truncate(
     body,
     MAX_OUTPUT_CHARS,
-    `[输出过长已截断，仅保留前 ${MAX_OUTPUT_CHARS} 字符]`,
+    `[Output truncated: only the first ${MAX_OUTPUT_CHARS} characters are kept]`,
   );
   if (result.stopReason === 'interrupted') {
-    return { output: `${output}\n[子代理已被中断，以上为部分结果]`, isError: true };
+    return { output: `${output}\n[The subagent was interrupted; the above is a partial result]`, isError: true };
   }
   return { output };
 }
@@ -359,8 +372,8 @@ function createSubagentScope(host: AgentToolHost, cwd: string): SubagentScope {
         approvals.reply(event.request.id, {
           decision: 'reject',
           feedback:
-            '子代理没有交互审批能力，该操作已自动拒绝。请改用只读方式完成，' +
-            '或在最终结论中说明需要主代理代为执行的写/执行操作。',
+            'A subagent has no interactive approval capability, so this operation was automatically rejected. Complete it read-only instead, ' +
+            'or state in your final conclusion which write or execute operations the main agent should perform on your behalf.',
         });
         return;
       }
@@ -472,24 +485,29 @@ async function callBatch(
   }
 
   if (host.tasks === undefined) {
-    return { output: '当前环境不支持后台子代理（缺少任务管理器）', isError: true };
+    return {
+      output: 'Background subagents are not supported in this environment (no task manager)',
+      isError: true,
+    };
   }
-  const handle = host.tasks.startAgent(`Agent(并行 ${tasks.length} 任务) ${first.description} 等`);
+  const handle = host.tasks.startAgent(
+    `Agent(parallel ${tasks.length} tasks) ${first.description} et al.`,
+  );
   // 后台任务刻意不级联 ctx.signal：interrupt / turn 结束不影响它（与单发后台一致）
   void runBatchAll(host, tasks, ctx.cwd, handle.signal)
     .then((sections) => {
       const allFailed = sections.every((section) => section.isError);
-      handle.appendOutput(`\n--- 最终结论 ---\n${formatBatchSections(sections)}\n`);
+      handle.appendOutput(`\n--- Final conclusions ---\n${formatBatchSections(sections)}\n`);
       handle.settle(allFailed ? 1 : 0);
     })
     .catch((error: unknown) => {
-      handle.appendOutput(`\n[子代理异常] ${errorMessage(error)}`);
+      handle.appendOutput(`\n[Subagent error] ${errorMessage(error)}`);
       handle.settle(1);
     });
   return {
     output:
-      `后台并行子代理 ${handle.task.id} 已启动（${tasks.length} 个任务：${first.description} 等）。\n` +
-      '用 task_output 查看进度与最终结果（block=true 可挂起等待结束）；任务结束时会收到通知。',
+      `Background parallel subagents ${handle.task.id} started (${tasks.length} tasks: ${first.description} et al.).\n` +
+      'Use task_output to inspect progress and the final result (block=true waits for completion); you are notified when they finish.',
   };
 }
 
@@ -533,8 +551,8 @@ export function createAgentTool(host: AgentToolHost): Tool {
       ) {
         return {
           output:
-            '单发模式需要 description、prompt、subagent_type 三个字段；' +
-            '并行批量执行请改用 tasks（1-8 个 { description, prompt, subagent_type }）。',
+            'Single-task mode requires all three fields: description, prompt, and subagent_type. ' +
+            'For parallel batches use tasks instead (1-8 { description, prompt, subagent_type } items).',
           isError: true,
         };
       }
@@ -564,7 +582,10 @@ export function createAgentTool(host: AgentToolHost): Tool {
       }
 
       if (host.tasks === undefined) {
-        return { output: '当前环境不支持后台子代理（缺少任务管理器）', isError: true };
+        return {
+          output: 'Background subagents are not supported in this environment (no task manager)',
+          isError: true,
+        };
       }
       const handle = host.tasks.startAgent(`Agent(${input.subagent_type}) ${input.description}`);
       const toolsByName = new Map(spec.tools.map((tool) => [tool.name, tool]));
@@ -591,17 +612,17 @@ export function createAgentTool(host: AgentToolHost): Tool {
         .then((result) => {
           // runSubagent 内已收割原文；这里对聚合 output 再收一遍（去重幂等，防截断前缀差异漏收）
           harvestToBoard(host, runDeps.type, result.output);
-          handle.appendOutput(`\n--- 最终结论 ---\n${result.output}\n`);
+          handle.appendOutput(`\n--- Final conclusion ---\n${result.output}\n`);
           handle.settle(result.isError === true ? 1 : 0);
         })
         .catch((error: unknown) => {
-          handle.appendOutput(`\n[子代理异常] ${errorMessage(error)}`);
+          handle.appendOutput(`\n[Subagent error] ${errorMessage(error)}`);
           handle.settle(1);
         });
       return {
         output:
-          `后台子代理 ${handle.task.id} 已启动（${input.subagent_type}：${input.description}）。\n` +
-          '用 task_output 查看进度与最终结果（block=true 可挂起等待结束）；任务结束时会收到通知。',
+          `Background subagent ${handle.task.id} started (${input.subagent_type}: ${input.description}).\n` +
+          'Use task_output to inspect progress and the final result (block=true waits for completion); you are notified when it finishes.',
       };
     },
   });

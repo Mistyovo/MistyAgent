@@ -70,7 +70,7 @@ describe('PlanApprovalManager', () => {
     const first = manager.request(planRequest);
     const dup = await manager.request(planRequest);
     expect(dup.approved).toBe(false);
-    expect(dup.feedback).toContain('重复');
+    expect(dup.feedback).toContain('Duplicate plan approval request id');
     expect(manager.reply('p1', { approved: true })).toBe(true);
     await expect(first).resolves.toEqual({ approved: true });
   });
@@ -224,10 +224,10 @@ describe('plan 工具单测', () => {
   it('无宿主能力：两工具回喂不支持，isError', async () => {
     const enter = await createEnterPlanModeTool().call({}, ctx);
     expect(enter.isError).toBe(true);
-    expect(enter.output).toContain('不支持计划模式');
+    expect(enter.output).toContain('Plan mode is not supported');
     const exit = await createExitPlanModeTool().call({ plan: '# x' }, ctx);
     expect(exit.isError).toBe(true);
-    expect(exit.output).toContain('不支持计划模式');
+    expect(exit.output).toContain('Plan mode is not supported');
   });
 
   it('enter/exit 幂等与前置校验（内存宿主）', async () => {
@@ -254,19 +254,19 @@ describe('plan 工具单测', () => {
     const exit = createExitPlanModeTool(host);
 
     const first = await enter.call({}, ctx);
-    expect(first.output).toContain('已进入计划模式');
+    expect(first.output).toContain('Entered plan mode');
     const again = await enter.call({}, ctx);
-    expect(again.output).toContain('已在计划模式中');
+    expect(again.output).toContain('Already in plan mode');
     expect(again.isError).toBeUndefined();
 
     const approved = await exit.call({ plan: '# 计划' }, ctx);
-    expect(approved.output).toContain('计划已获批准');
+    expect(approved.output).toContain('The plan was approved');
     expect(approved.isError).toBeUndefined();
     expect(active).toBe(false);
 
     const notInPlan = await exit.call({ plan: '# 计划' }, ctx);
     expect(notInPlan.isError).toBe(true);
-    expect(notInPlan.output).toContain('不在计划模式');
+    expect(notInPlan.output).toContain('Not in plan mode');
   });
 });
 
@@ -361,15 +361,15 @@ describe('plan 模式闭环：loop 与 session', () => {
     expect(result.stopReason).toBe('completed');
     // prompt 注入是步级的：进入前没有指引，进入后下一步即有，批准退出后恢复
     expect(provider.requests[0]!.systemPrompt).toBe('system');
-    expect(provider.requests[1]!.systemPrompt).toContain('当前处于计划模式');
+    expect(provider.requests[1]!.systemPrompt).toContain('You are currently in plan mode');
     expect(provider.requests[3]!.systemPrompt).toBe('system');
 
     const toolMessages = session.getMessages().filter((m): m is ToolMessage => m.role === 'tool');
-    expect(toolMessages[0]!.content).toContain('已进入计划模式');
+    expect(toolMessages[0]!.content).toContain('Entered plan mode');
     // 计划模式中 write 被权限直接拒绝（不弹审批）
     expect(toolMessages[1]!.isError).toBe(true);
-    expect(toolMessages[1]!.content).toContain('plan 模式为只读');
-    expect(toolMessages[2]!.content).toContain('计划已获批准');
+    expect(toolMessages[1]!.content).toContain('Plan mode is read-only');
+    expect(toolMessages[2]!.content).toContain('The plan was approved');
     // 退出后恢复 default：write 走正常审批（once 放行）并真正落盘
     expect(toolMessages[3]!.isError).toBeUndefined();
     await expect(readFile(path.join(dir, 'a.txt'), 'utf8')).resolves.toBe('hi');
@@ -423,9 +423,9 @@ describe('plan 模式闭环：loop 与 session', () => {
     expect(submissions).toBe(2);
     const toolMessages = session.getMessages().filter((m): m is ToolMessage => m.role === 'tool');
     expect(toolMessages[0]!.isError).toBe(true);
-    expect(toolMessages[0]!.content).toContain('计划被拒绝');
+    expect(toolMessages[0]!.content).toContain('The plan was rejected');
     expect(toolMessages[0]!.content).toContain('补充验收标准');
-    expect(toolMessages[1]!.content).toContain('计划已获批准');
+    expect(toolMessages[1]!.content).toContain('The plan was approved');
     expect(session.isPlanMode()).toBe(false);
     // --mode plan 启动的来路是 default
     expect(session.getPermissionMode()).toBe('default');
@@ -470,7 +470,7 @@ describe('plan 模式闭环：loop 与 session', () => {
     expect(planApprovals(events)).toHaveLength(0);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('不在计划模式');
+    expect(toolMessage.content).toContain('Not in plan mode');
   });
 
   it('计划模式中模型重复 enter_plan_mode：幂等提示，不发第二次 mode 事件', async () => {
@@ -487,7 +487,7 @@ describe('plan 模式闭环：loop 与 session', () => {
     expect(result.stopReason).toBe('completed');
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBeUndefined();
-    expect(toolMessage.content).toContain('已在计划模式中');
+    expect(toolMessage.content).toContain('Already in plan mode');
     expect(events.some((e) => e.type === 'plan-mode-changed')).toBe(false);
     expect(session.isPlanMode()).toBe(true);
   });
@@ -523,6 +523,6 @@ describe('plan 工具在无宿主的 registry（缺省接线）', () => {
     expect(session.isPlanMode()).toBe(false);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('不支持计划模式');
+    expect(toolMessage.content).toContain('Plan mode is not supported');
   });
 });

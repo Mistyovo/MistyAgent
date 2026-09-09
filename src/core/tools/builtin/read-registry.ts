@@ -59,8 +59,8 @@ export async function staleFileError(
   }
   return {
     output:
-      `文件自上次读取后已被修改（外部编辑、bash 命令或 /rewind 回滚）：${shown}。` +
-      '当前内容与你掌握的版本不一致，请重新 read 后再修改。',
+      `File has been modified since you last read it (external edit, bash command, or /rewind): ${shown}. ` +
+      'Its current content differs from the version you have — read it again before modifying.',
     isError: true,
   };
 }

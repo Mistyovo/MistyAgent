@@ -19,17 +19,23 @@ const MAX_MATCHES = 100;
 const MAX_LINE_LENGTH = 500;
 
 const inputSchema = z.object({
-  pattern: z.string().describe('正则表达式（JS 语法）'),
-  path: z.string().optional().describe('搜索根目录，相对 cwd 或绝对路径，默认 cwd'),
-  include: z.string().optional().describe('文件名 glob 过滤，如 "*.ts"，相对搜索根目录匹配'),
+  pattern: z.string().describe('Regular expression (JavaScript syntax)'),
+  path: z
+    .string()
+    .optional()
+    .describe('Search root, relative to cwd or absolute; defaults to cwd'),
+  include: z
+    .string()
+    .optional()
+    .describe('Filename glob filter, e.g. "*.ts", matched relative to the search root'),
 });
 
 export const grepTool = defineTool({
   name: 'grep',
   description:
-    '在文件内容中搜索正则匹配，输出 <path>:<行号>:<内容>（跳过 .git / node_modules 与二进制文件）。' +
-    `最多返回 ${MAX_MATCHES} 条。已知符号名 / 报错文案直接搜它；` +
-    '用 include（如 "*.ts"）限定文件类型可显著减少噪音。',
+    'Search file contents for a regular expression, returning <path>:<line>:<content> (skipping .git / node_modules and binary files). ' +
+    `Returns at most ${MAX_MATCHES} matches. Search for a known symbol name or error string directly; ` +
+    'narrow the file type with include (e.g. "*.ts") to cut noise sharply.',
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],
@@ -39,12 +45,12 @@ export const grepTool = defineTool({
     try {
       regex = new RegExp(input.pattern);
     } catch {
-      return errorResult(`非法的正则表达式：${input.pattern}`);
+      return errorResult(`Invalid regular expression: ${input.pattern}`);
     }
     const root = resolvePath(ctx.cwd, input.path ?? '.');
     const stats = await statKind(root);
     if (!stats.isDirectory) {
-      return errorResult(`目录不存在：${displayPath(ctx.cwd, root)}`);
+      return errorResult(`Directory not found: ${displayPath(ctx.cwd, root)}`);
     }
     const include = input.include;
     const includeMatch = include !== undefined ? picomatch(include, { dot: true }) : undefined;
@@ -90,9 +96,11 @@ export const grepTool = defineTool({
       }
     }
     if (matches.length === 0) {
-      return { output: '没有匹配的内容' };
+      return { output: 'No matches' };
     }
-    const note = truncated ? `\n[匹配过多已截断，仅显示前 ${MAX_MATCHES} 条]` : '';
+    const note = truncated
+      ? `\n[Too many matches, truncated: showing the first ${MAX_MATCHES}]`
+      : '';
     return { output: matches.join('\n') + note };
   },
 });

@@ -150,11 +150,11 @@ const withChalkLevel = (level: ColorSupportLevel, run: () => void): void => {
 describe('组件渲染使用 theme 色', () => {
   const userBlock: UiBlock = { id: 1, kind: 'user', text: '你好' };
 
-  it('basic 主题：用户消息前缀发 yellow SGR，渲染输出无真彩序列', () => {
+  it('basic 主题：用户消息前缀发 cyan SGR，渲染输出无真彩序列', () => {
     setThemeForTests(themePalettes.dark.basic);
     withChalkLevel(1, () => {
       const output = renderToString(<MessageList blocks={[userBlock]} />);
-      expect(output).toContain('\x1b[33m');
+      expect(output).toContain('\x1b[36m');
       expect(output).not.toContain('38;2;');
     });
   });

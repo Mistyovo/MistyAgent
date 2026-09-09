@@ -7,7 +7,7 @@ export class ToolRegistry {
 
   register(tool: Tool): void {
     if (this.tools.has(tool.name)) {
-      throw new Error(`工具重复注册：${tool.name}`);
+      throw new Error(`Duplicate tool registration: ${tool.name}`);
     }
     this.tools.set(tool.name, tool);
   }

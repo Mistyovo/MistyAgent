@@ -59,7 +59,7 @@ describe('bash 前台杀进程树', () => {
     const bash = createBashTool(manager);
     const result = await bash.call({ command: PRINT_PID_AND_HANG, timeout: 1000 }, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('超时');
+    expect(result.output).toContain('timed out');
     const match = /childpid:(\d+)/.exec(result.output);
     expect(match).not.toBeNull();
     await expectProcessDead(Number(match![1]));
@@ -80,7 +80,7 @@ describe('bash 前台杀进程树', () => {
     controller.abort();
     const result = await running;
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('中断');
+    expect(result.output).toContain('interrupted');
     await expectProcessDead(pid);
   }, 15000);
 });
@@ -103,7 +103,7 @@ describe('HookRunner 杀进程树与 matcher 缓存', () => {
     );
     const result = await runner.run({ event: 'stop', cwd });
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain('超时');
+    expect(result.warnings[0]).toContain('timed out');
     const pid = Number(await readFile(path.join(cwd, 'hook-child.pid'), 'utf8'));
     await expectProcessDead(pid);
   }, 15000);

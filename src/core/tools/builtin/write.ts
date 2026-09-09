@@ -11,16 +11,18 @@ import { displayPath, errorResult, resolvePath, statKind } from './fs-utils';
 import { hasRead, recordWritten, staleFileError } from './read-registry';
 
 const inputSchema = z.object({
-  path: z.string().describe('文件路径，相对 cwd 或绝对路径；父目录不存在时自动创建'),
-  content: z.string().describe('要写入的完整内容（覆盖已有文件）'),
+  path: z
+    .string()
+    .describe('File path, relative to cwd or absolute; missing parent directories are created'),
+  content: z.string().describe('Full content to write (overwrites an existing file)'),
 });
 
 export const writeTool = defineTool({
   name: 'write',
   description:
-    '创建新文件或整文件覆盖写入，父目录不存在时自动创建。' +
-    '新建文件用本工具；已读过的文件做局部修改优先用 edit 精确替换，整文件重写容易带入意外改动。' +
-    '覆盖已存在的文件前建议先 read 确认原内容；文件被外部改动后会拒绝写入，需重新 read。',
+    'Create a new file or overwrite a file in full; missing parent directories are created. ' +
+    'Use this for new files. For targeted changes to a file you have already read, prefer edit — a whole-file rewrite is easy to carry unintended changes. ' +
+    'Read an existing file before overwriting it so you know what you are replacing; a file changed on disk since you read it is refused and must be re-read.',
   inputSchema,
   accesses: (input) => [{ kind: 'write', paths: [input.path] }],
   describeCall: (input) => `Write ${input.path}`,
@@ -39,10 +41,11 @@ export const writeTool = defineTool({
       await mkdir(path.dirname(absolute), { recursive: true });
       await writeFile(absolute, input.content, 'utf8');
       await recordWritten(absolute);
-      const note = existed && !wasRead ? '；注意：覆盖了本会话未读取过的已有文件' : '';
-      return { output: `已写入 ${shown}（${input.content.length} 字符）${note}` };
+      const note =
+        existed && !wasRead ? ' (note: overwrote an existing file not read in this session)' : '';
+      return { output: `Wrote ${shown} (${input.content.length} characters)${note}` };
     } catch (error) {
-      return errorResult(`写入失败：${errorMessage(error)}`);
+      return errorResult(`Write failed: ${errorMessage(error)}`);
     }
   },
 });

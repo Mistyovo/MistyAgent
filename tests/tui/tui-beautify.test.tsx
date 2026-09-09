@@ -213,11 +213,11 @@ describe('弹窗美化', () => {
   it('QuestionDialog：统一 · 分隔的键位提示行（单选/多选）', () => {
     const base = { id: 'q1', question: '选哪个？', options: [{ label: '甲' }, { label: '乙' }] };
     expect(renderToString(<QuestionDialog request={base} onReply={() => {}} />)).toContain(
-      '↑/↓ move · 1-4 select · enter confirm · esc skip',
+      '↑↓ move · 1-4 choose · enter ok · esc skip',
     );
     expect(
       renderToString(<QuestionDialog request={{ ...base, multiSelect: true }} onReply={() => {}} />),
-    ).toContain('↑/↓ move · space/1-4 toggle · enter confirm · esc skip');
+    ).toContain('↑↓ move · space/1-4 toggle · enter ok · esc skip');
   });
 
   it('QuestionDialog：标题用 accent 色', () => {
@@ -236,7 +236,7 @@ describe('弹窗美化', () => {
   it('PlanApprovalDialog：统一键位提示行，标题/边框用 permissionMode.plan 色', () => {
     expect(
       renderToString(<PlanApprovalDialog request={{ id: 'p1', plan: '# 计划' }} onReply={() => {}} />),
-    ).toContain('←/→ move · 1/2 select · enter confirm · esc reject');
+    ).toContain('1/2 choose · ←→ move · enter ok · esc reject');
 
     setThemeForTests(themePalettes.dark.rich);
     withChalkLevel(3, () => {
@@ -257,7 +257,7 @@ describe('PromptInput 细节', () => {
         <PromptInput busy={false} queuedCount={0} disabled={false} onSubmit={() => {}} />,
       );
       expect(idle).toContain(`${hexToSgr(themePalettes.dark.rich.promptMarker)}❯ `);
-      expect(idle).toContain('Try ');
+      expect(idle).toContain('e.g. ');
 
       const busy = renderToString(
         <PromptInput busy={true} queuedCount={0} disabled={false} onSubmit={() => {}} />,
@@ -299,9 +299,11 @@ describe('App 欢迎头与空态', () => {
       <App session={session} registry={registry} model="fake-model" cwd="/tmp/zenwork" />,
     );
     const lines = visibleLines(output);
-    expect(lines[0]).toBe('Misty');
-    expect(lines[1]).toContain('fake-model · ? default · /help for commands');
-    expect(output).toContain('Try ');
+    expect(lines[0]).toBe('  .#######.');
+    expect(output).toContain('Misty');
+    expect(output).toContain('coding agent in the mist');
+    expect(output).toContain('fake-model ~ ? default ~ /help for commands');
+    expect(output).toContain('e.g. ');
     expect(output).toContain('zenwork');
   });
 
@@ -352,9 +354,10 @@ describe('legacy-cjk 虚拟终端：欢迎头与反色底栏无残帧', () => {
       await sleep(100);
       const idle = stdout.content();
       // 欢迎头与空态提示
-      expect(idle.split('\n').some((line) => line === 'Misty')).toBe(true);
+      expect(idle.split('\n').some((line) => line.includes('.####'))).toBe(true);
+      expect(idle).toContain('coding agent in the mist');
       expect(idle).toContain('/help for commands');
-      expect(idle).toContain('Try ');
+      expect(idle).toContain('e.g. ');
       // 底栏单行：basename/模型/模式在同一物理行内（折行会把模式挤到下一行）
       const idleBar = idle.split('\n').find((line) => line.includes('MistyAgent'))!;
       expect(idleBar).toContain('fake-model');
@@ -371,7 +374,7 @@ describe('legacy-cjk 虚拟终端：欢迎头与反色底栏无残帧', () => {
       await sleep(300);
       const content = stdout.content();
       // 底栏唯一且仍是单行（含 token 用量右簇）
-      expect(occurrences(content, 'MistyAgent · fake-model')).toBe(1);
+      expect(occurrences(content, 'MistyAgent ~ fake-model')).toBe(1);
       const bar = content.split('\n').find((line) => line.includes('MistyAgent'))!;
       expect(bar).toContain('? default');
       expect(bar).toContain('↑');

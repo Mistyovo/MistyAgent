@@ -24,13 +24,13 @@ describe('agent 工具（共享证据板）', () => {
     await tool.call({ description: 'd', prompt: 'p', subagent_type: 'explore' }, ctx());
 
     const systemPrompt = provider.requests[0]!.systemPrompt;
-    expect(systemPrompt).toContain('共享证据板');
+    expect(systemPrompt).toContain('shared evidence board');
     expect(systemPrompt).toContain('VERIFIED_FACT:');
     expect(systemPrompt).toContain('DEADEND:');
-    expect(systemPrompt).toContain('已确认的事实：');
-    expect(systemPrompt).toContain('- foo 定义在 a.ts:1（Agent(explore)）');
-    expect(systemPrompt).toContain('已排除的方向（不要重复尝试）：');
-    expect(systemPrompt).toContain('- 改配置中心方向已排除（Agent(plan)）');
+    expect(systemPrompt).toContain('Confirmed facts:');
+    expect(systemPrompt).toContain('- foo 定义在 a.ts:1 (Agent(explore))');
+    expect(systemPrompt).toContain('Ruled-out directions (do not retry):');
+    expect(systemPrompt).toContain('- 改配置中心方向已排除 (Agent(plan))');
   });
 
   it('board 为空时只有纪律段，不附板内容分节', async () => {
@@ -41,8 +41,8 @@ describe('agent 工具（共享证据板）', () => {
     await tool.call({ description: 'd', prompt: 'p', subagent_type: 'explore' }, ctx());
 
     const systemPrompt = provider.requests[0]!.systemPrompt;
-    expect(systemPrompt).toContain('共享证据板');
-    expect(systemPrompt).not.toContain('已确认的事实：');
+    expect(systemPrompt).toContain('shared evidence board');
+    expect(systemPrompt).not.toContain('Confirmed facts:');
   });
 
   it('宿主不提供 board 时 systemPrompt 不含纪律段（现状回归）', async () => {
@@ -51,7 +51,7 @@ describe('agent 工具（共享证据板）', () => {
 
     await tool.call({ description: 'd', prompt: 'p', subagent_type: 'explore' }, ctx());
 
-    expect(provider.requests[0]!.systemPrompt).not.toContain('共享证据板');
+    expect(provider.requests[0]!.systemPrompt).not.toContain('shared evidence board');
   });
 
   it('结论中的 VERIFIED_FACT / DEADEND 行被收割进 board（来源标注 Agent(type)）', async () => {

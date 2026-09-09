@@ -50,21 +50,22 @@ export function estimateTokens(messages: readonly Message[]): number {
 }
 
 const SUMMARY_PROMPT_BODY = [
-  '请用中文输出一份简洁摘要，它将替代原始历史作为后续对话的唯一上下文，必须保留：',
-  '1）对话目标，以及用户给出的约束、偏好与纠正（用户纠正过你的地方尤其重要）；',
-  '2）已完成的工作与关键决策及其理由；',
-  '3）涉及的关键文件及各自改了什么；',
-  '4）已验证的事实与已排除的方向（哪些验证命令跑过、结果如何）；',
-  '5）待办事项与下一步计划。',
-  '只保留对继续工作有用的信息，不要复述工具的原始输出。',
+  'Produce a concise summary in the user\'s language. It replaces the raw history as the sole context for the rest of the conversation, so it must preserve:',
+  '1) The goal of the conversation, plus every constraint, preference, and correction the user gave (the places where the user corrected you matter most);',
+  '2) The work completed and the key decisions with their rationale;',
+  '3) The key files involved and what changed in each;',
+  '4) Verified facts and ruled-out directions (which verification commands were run and what they returned);',
+  '5) Outstanding items and the next steps.',
+  'Keep only what is useful for continuing the work; do not restate raw tool output.',
 ].join('\n');
 
-const SUMMARY_PROMPT = `以上是当前会话的完整对话历史。${SUMMARY_PROMPT_BODY}`;
+const SUMMARY_PROMPT = `The above is the complete conversation history of the current session. ${SUMMARY_PROMPT_BODY}`;
 
 /** 历史被截窗时改用：说明窗口外还有被省略的早期部分 */
-const SUMMARY_PROMPT_WINDOWED = `以上是会话历史的较新部分（更早部分已省略，概况见上一条消息）。${SUMMARY_PROMPT_BODY}`;
+const SUMMARY_PROMPT_WINDOWED = `The above is the newer part of the session history (earlier parts were omitted; a digest is in the message before it). ${SUMMARY_PROMPT_BODY}`;
 
-const SUMMARIZER_SYSTEM_PROMPT = '你是对话摘要助手，输出简洁、准确的中文摘要。';
+const SUMMARIZER_SYSTEM_PROMPT =
+  'You are a conversation summarizer. Produce a concise, accurate summary in the same language as the conversation.';
 
 export interface CompactResult {
   beforeCount: number;
@@ -165,9 +166,9 @@ async function buildReinjectionMessages(
       if (messages.length > 0) {
         break;
       }
-      body = `${body.slice(0, remaining)}\n[超出回注预算，内容截断]`;
+      body = `${body.slice(0, remaining)}\n[Re-injection budget exceeded, content truncated]`;
     }
-    const header = `[压缩前刚读过的文件，重新加载当前内容供参考：${shown}]`;
+    const header = `[File read just before compaction, reloaded with its current content for reference: ${shown}]`;
     messages.push({ role: 'user', content: `${header}\n${body}` });
     remaining -= header.length + 1 + body.length;
   }
@@ -211,14 +212,16 @@ function buildDroppedDigest(dropped: readonly Message[]): Message {
     }
   }
   const readPaths = extractRecentReadFiles(dropped, DIGEST_MAX_READ_PATHS);
-  const lines = [`[更早的 ${dropped.length} 条历史消息因超出摘要预算被省略，仅附概况]`];
+  const lines = [
+    `[${dropped.length} earlier history messages were omitted because they exceeded the summary budget; only this digest is attached]`,
+  ];
   if (toolCounts.size > 0) {
     lines.push(
-      `工具调用：${[...toolCounts].map(([name, count]) => `${name}×${count}`).join('、')}`,
+      `Tool calls: ${[...toolCounts].map(([name, count]) => `${name}×${count}`).join(', ')}`,
     );
   }
   if (readPaths.length > 0) {
-    lines.push(`最近读取文件：${readPaths.join('、')}`);
+    lines.push(`Recently read files: ${readPaths.join(', ')}`);
   }
   return { role: 'user', content: lines.join('\n') };
 }
@@ -284,7 +287,7 @@ export async function compactHistory(options: CompactOptions): Promise<CompactRe
   while (tail.length > 0 && tail[0]?.role === 'tool') {
     tail.shift();
   }
-  const summaryMessage: Message = { role: 'user', content: `[历史对话摘要]\n${summary}` };
+  const summaryMessage: Message = { role: 'user', content: `[Conversation history summary]\n${summary}` };
   const reinjected =
     cwd !== undefined && readFiles.length > 0
       ? await buildReinjectionMessages(readFiles, cwd, options.signal)
@@ -326,7 +329,7 @@ export function isOverCompactThreshold(
 const PRUNE_KEEP_RECENT_MESSAGES = 12;
 /** 单条工具输出进入修剪的最小字符数 */
 const PRUNE_MIN_OUTPUT_CHARS = 3000;
-const PRUNE_MARK = '[此工具输出已修剪以释放上下文';
+const PRUNE_MARK = '[This tool output was pruned to free context';
 
 export interface PruneResult {
   prunedCount: number;
@@ -369,8 +372,8 @@ export function pruneStaleToolOutputs(
     }
     const spilled = options.spill?.(message.content) ?? null;
     message.content =
-      `${PRUNE_MARK}：原 ${message.content.length} 字符` +
-      (spilled !== null ? `，全量已落盘 ${spilled}]` : ']');
+      `${PRUNE_MARK}: was ${message.content.length} characters` +
+      (spilled !== null ? `; the full output is on disk at ${spilled}]` : ']');
     prunedCount += 1;
   }
   if (prunedCount === 0) {

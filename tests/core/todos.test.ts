@@ -30,7 +30,7 @@ describe('validateTodos', () => {
   it('前后都为 done 的条目 content 不可变', () => {
     const prev = [todo('a', 'done'), todo('b', 'pending')];
     expect(validateTodos([todo('a 改名', 'done'), todo('b', 'pending')], prev)).toContain(
-      '已完成的任务不能修改内容',
+      'Completed tasks cannot be modified',
     );
     expect(validateTodos([todo('a', 'done'), todo('b', 'in_progress')], prev)).toBeNull();
   });
@@ -102,8 +102,8 @@ describe('todo 工具', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(result.output).toContain('共 2 项');
-    expect(result.output).toContain('进行中：实现功能');
+    expect(result.output).toContain('2 items');
+    expect(result.output).toContain('in progress: 实现功能');
     expect(store.list()).toEqual([
       todo('实现功能', 'in_progress', '正在实现功能'),
       todo('写测试', 'pending'),

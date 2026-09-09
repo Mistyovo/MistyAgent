@@ -31,7 +31,7 @@ export interface McpCallOptions {
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`${ms}ms 内未响应`));
+      reject(new Error(`No response within ${ms}ms`));
     }, ms);
     promise.then(resolve, reject).finally(() => {
       clearTimeout(timer);
@@ -91,7 +91,7 @@ export class McpClient {
       const detail = errorMessage(error);
       const stderr = this.stderrTail.trim();
       throw new Error(
-        `MCP server "${this.serverName}" 连接失败：${detail}${stderr === '' ? '' : `（stderr: ${stderr}）`}`,
+        `MCP server "${this.serverName}" connection failed: ${detail}${stderr === '' ? '' : ` (stderr: ${stderr})`}`,
         { cause: error },
       );
     }

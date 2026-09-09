@@ -77,16 +77,16 @@ function readSettingsFile(
   try {
     parsed = JSON.parse(readFileSync(filePath, 'utf8'));
   } catch {
-    warnings.push(`配置文件 ${filePath} 不是合法的 JSON，已忽略`);
+    warnings.push(`Config file ${filePath} is not valid JSON; ignored`);
     return undefined;
   }
   if (!isPlainObject(parsed)) {
-    warnings.push(`配置文件 ${filePath} 的内容不是 JSON 对象，已忽略`);
+    warnings.push(`Config file ${filePath} does not contain a JSON object; ignored`);
     return undefined;
   }
   if (isPlainObject(parsed.provider) && parsed.provider.apiKey !== undefined) {
     warnings.push(
-      `配置文件 ${filePath} 中的 provider.apiKey 已被忽略：API key 只允许来自环境变量 MISTY_API_KEY / OPENAI_API_KEY`,
+      `provider.apiKey in config file ${filePath} was ignored: the API key may only come from the MISTY_API_KEY / OPENAI_API_KEY environment variables`,
     );
     const provider = { ...parsed.provider };
     delete provider.apiKey;
@@ -142,7 +142,7 @@ export function loadSettings(
     const details = parsed.error.issues
       .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
       .join('; ');
-    throw new Error(`配置无效：${details}`);
+    throw new Error(`Invalid config: ${details}`);
   }
   return { settings: parsed.data, warnings };
 }
@@ -150,7 +150,7 @@ export function loadSettings(
 export function resolveProviderConfig(settings: Settings): ProviderConfig {
   const { apiKey, baseURL } = settings.provider;
   if (apiKey === undefined || apiKey === '') {
-    throw new Error('未配置 API key：请设置环境变量 MISTY_API_KEY 或 OPENAI_API_KEY');
+    throw new Error('API key not configured: set the MISTY_API_KEY or OPENAI_API_KEY environment variable');
   }
   return { type: 'openai', apiKey, baseURL };
 }

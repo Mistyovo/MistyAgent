@@ -12,13 +12,13 @@ import { Markdown } from './Markdown';
 
 const OUTPUT_PREVIEW_LINES = TOOL_OUTPUT_PREVIEW_LINES;
 
-/** ⏺（U+23FA）与 ⎿（U+23BF）在 legacy-cjk 终端按 2 格渲染，回退 ASCII 形态 */
+/** ◆（U+25C6）与 ↳（U+21B3）在 legacy-cjk 终端按 2 格渲染，回退 ASCII 形态 */
 function toolBullet(): string {
-  return getTerminalWidthMode() === 'legacy-cjk' ? '*' : '⏺';
+  return getTerminalWidthMode() === 'legacy-cjk' ? '*' : '◆';
 }
 
 function resultPrefix(): string {
-  return getTerminalWidthMode() === 'legacy-cjk' ? '>' : '⎿';
+  return getTerminalWidthMode() === 'legacy-cjk' ? '>' : '↳';
 }
 
 /** Claude Code 风格的时长：秒为主单位，亚秒保留 ms */

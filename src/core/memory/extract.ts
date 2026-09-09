@@ -25,10 +25,10 @@ function serializeTranscript(messages: readonly Message[]): string {
     let content = message.content;
     if (message.role === 'assistant' && message.toolCalls !== undefined && message.toolCalls.length > 0) {
       const calls = message.toolCalls.map((c) => `${c.name}(${c.arguments})`).join('; ');
-      content = content === '' ? `[调用工具] ${calls}` : `${content}\n[调用工具] ${calls}`;
+      content = content === '' ? `[tool calls] ${calls}` : `${content}\n[tool calls] ${calls}`;
     }
     if (content.length > MAX_MESSAGE_CHARS) {
-      content = `${content.slice(0, MAX_MESSAGE_CHARS)}\n…（截断）`;
+      content = `${content.slice(0, MAX_MESSAGE_CHARS)}\n…(truncated)`;
     }
     const role = message.role === 'tool' ? `tool(${message.name})` : message.role;
     lines.push(`${role}: ${content}`);
@@ -39,34 +39,34 @@ function serializeTranscript(messages: readonly Message[]): string {
 function buildExtractionSystemPrompt(dir: string, existingManifest: string): string {
   const existing =
     existingManifest !== ''
-      ? `\n\n## 已有记忆文件\n\n${existingManifest}\n\n写入前先对照这份清单——优先更新已有文件，不要新建重复记忆。`
+      ? `\n\n## Existing memory files\n\n${existingManifest}\n\nCheck this list before writing — prefer updating an existing file over creating a duplicate memory.`
       : '';
   return [
-    `你是记忆提取子代理。分析用户消息里对话记录的最近约 ${MAX_TRANSCRIPT_MESSAGES} 条消息，用它们更新持久记忆系统。`,
+    `You are a memory extraction subagent. Analyze the roughly ${MAX_TRANSCRIPT_MESSAGES} most recent messages of the conversation transcript in the user message and use them to update the persistent memory system.`,
     '',
-    `记忆目录：\`${dir}\`（已存在，直接写入）。可用工具：read / glob / grep，以及仅限记忆目录内路径的 write / edit——目录外的写入会被拒绝。`,
+    `Memory directory: \`${dir}\` (already exists, write to it directly). Available tools: read / glob / grep, plus write / edit restricted to paths inside the memory directory — writes outside it are rejected.`,
     '',
-    '步数预算有限，高效策略：第一步并行发起所有需要的 read，第二步并行发起所有 write / edit，不要在多步之间交替读写。',
+    'Your step budget is limited, so work efficiently: in step one issue all the reads you need in parallel, in step two issue all the writes / edits in parallel. Do not alternate reads and writes across many steps.',
     '',
-    '只用对话记录里的内容更新记忆——不要再 grep 源码、读代码验证或跑 git 命令。忽略对话记录里的 <recalled-memories> 块与系统提示内容，它们不是记忆素材。没有值得保存的内容就一个文件也不写。',
+    'Update memory only from what the transcript contains — do not grep the source, read code to verify, or run git commands. Ignore the <recalled-memories> blocks and system prompt content inside the transcript; they are not memory material. If nothing is worth saving, write no files at all.',
     existing,
     '',
     ...TYPES_SECTION,
     '',
     ...WHAT_NOT_TO_SAVE_SECTION,
     '',
-    '## 如何保存记忆',
+    '## How to save a memory',
     '',
-    '保存分两步：',
+    'Saving takes two steps:',
     '',
-    '**第一步**——把记忆写进独立文件（如 `user_role.md`、`feedback_testing.md`），frontmatter 格式：',
+    '**Step one** — write the memory into its own file (e.g. `user_role.md`, `feedback_testing.md`) with this frontmatter format:',
     '',
     ...MEMORY_FRONTMATTER_EXAMPLE,
     '',
-    '**第二步**——在 `MEMORY.md` 里加一行指针：`- [标题](file.md) — 一句话钩子`。MEMORY.md 是索引不是记忆，没有 frontmatter，永远不要把记忆正文写进去。',
+    '**Step two** — add a one-line pointer to `MEMORY.md`: `- [Title](file.md) — one-line hook`. MEMORY.md is an index, not a memory: it has no frontmatter, and memory content must never go into it.',
     '',
-    '- 按主题而不是时间组织记忆',
-    '- 更新已有文件优于新建；发现记忆错误或过时，更新或删除它',
+    '- Organize memories by topic, not by time',
+    '- Updating an existing file beats creating a new one; when a memory is wrong or outdated, update or delete it',
   ].join('\n');
 }
 
@@ -83,11 +83,11 @@ function guardMemoryWrite(tool: Tool, dir: string): Tool {
           ? (input as { path?: unknown }).path
           : undefined;
       if (typeof target !== 'string') {
-        return { output: '参数缺少 path，无法校验目标路径', isError: true };
+        return { output: 'Argument is missing path, cannot validate the target', isError: true };
       }
       if (!isMemoryPath(resolvePath(ctx.cwd, target), dir)) {
         return {
-          output: `记忆提取只能写入记忆目录内的文件（${dir}）：${target}`,
+          output: `Memory extraction may only write files inside the memory directory (${dir}): ${target}`,
           isError: true,
         };
       }
@@ -121,7 +121,7 @@ export async function runMemoryExtraction(deps: {
       provider: deps.provider,
       model: deps.model,
       systemPrompt: buildExtractionSystemPrompt(dir, formatMemoryManifest(scanMemoryFiles(dir))),
-      messages: [{ role: 'user', content: `以下是主会话的对话记录：\n\n${transcript}` }],
+      messages: [{ role: 'user', content: `Here is the transcript of the main session:\n\n${transcript}` }],
       tools: [
         readTool,
         globTool,

@@ -14,7 +14,7 @@ export interface DialogFrameProps {
 }
 
 /**
- * 弹窗公共框架（对齐 Claude Code 的圆角边框弹窗）：
+ * 弹窗公共框架（圆角边框 + 标题行 + 统一宽度约束）：
  * - narrow 终端（现代终端，East Asian Ambiguous 按 1 格渲染）：ink round 边框
  *   （╭─╮│╰╯），歧义字符物理宽度与 ink 预算一致，完整四边安全
  * - legacy-cjk 终端（中文 cmd.exe 老式 conhost，歧义字符 2 格）：回退 classic

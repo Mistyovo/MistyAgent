@@ -117,7 +117,7 @@ describe('HookRunner', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
     expect(result.denied).toBe(false);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain('超时');
+    expect(result.warnings[0]).toContain('timed out');
   });
 
   it('进程启动失败（cwd 不存在）：记 warning 不阻断', async () => {
@@ -129,7 +129,7 @@ describe('HookRunner', () => {
     });
     expect(result.denied).toBe(false);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain('启动失败');
+    expect(result.warnings[0]).toContain('failed to start');
   });
 
   it('preToolUse deny：exit code 非 0，stderr 作为 reason', async () => {
@@ -188,7 +188,7 @@ describe('HookRunner', () => {
     });
     expect(result.denied).toBe(false);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain('退出码');
+    expect(result.warnings[0]).toContain('non-zero code');
     expect(result.warnings[0]).toContain('lint failed');
   });
 });
@@ -349,7 +349,7 @@ describe('hooks 集成（runTurn + 真实 hook 进程）', () => {
     expect(payload.event).toBe('postToolUse');
     expect(payload.toolName).toBe('write');
     expect(payload.input).toEqual({ path: 'out.txt', content: 'hello' });
-    expect(payload.output).toContain('已写入');
+    expect(payload.output).toContain('Wrote out.txt');
     expect(payload.isError).toBe(false);
     expect(payload.cwd).toBe(dir);
     // 工具真实执行了

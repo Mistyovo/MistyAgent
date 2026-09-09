@@ -89,27 +89,27 @@ export function parseSkillMarkdown(
 ): ParseSkillResult {
   const fail = (reason: string): ParseSkillResult => ({
     ok: false,
-    warning: `技能定义 ${fileName} 已忽略：${reason}`,
+    warning: `Skill definition ${fileName} ignored: ${reason}`,
   });
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content);
   if (match === null) {
-    return fail('缺少 frontmatter（文件须以 --- 包裹的元信息开头）');
+    return fail('Missing frontmatter (the file must start with metadata wrapped in ---)');
   }
   const fields = parseFrontmatter(match[1]!);
   const name = scalar(fields['name']);
   if (name === undefined) {
-    return fail('frontmatter 缺少必填字段 name');
+    return fail('frontmatter is missing required field name');
   }
   if (!NAME_PATTERN.test(name)) {
-    return fail(`name "${name}" 不合法（只允许字母/数字/连字符/下划线，字母开头）`);
+    return fail(`Invalid name "${name}" (only letters/digits/hyphens/underscores, and must start with a letter)`);
   }
   const description = scalar(fields['description']);
   if (description === undefined) {
-    return fail(`技能 ${name} 缺少必填字段 description`);
+    return fail(`Skill ${name} is missing required field description`);
   }
   const body = (match[2] ?? '').trim();
   if (body === '') {
-    return fail(`技能 ${name} 的正文为空`);
+    return fail(`Skill ${name} has an empty body`);
   }
   const definition: SkillDefinition = { name, description, body, source };
   const whenToUse = scalar(fields['when_to_use']);
@@ -140,7 +140,7 @@ function loadDir(
       .map((entry) => entry.name)
       .toSorted();
   } catch {
-    warnings.push(`技能目录 ${dir} 不可读，已跳过`);
+    warnings.push(`Skill directory ${dir} unreadable, skipped`);
     return;
   }
   for (const entry of entries) {
@@ -152,14 +152,14 @@ function loadDir(
     try {
       content = readFileSync(file, 'utf8');
     } catch {
-      warnings.push(`技能定义 ${file} 读取失败，已忽略`);
+      warnings.push(`Skill definition ${file} read failed; ignored`);
       continue;
     }
     const parsed = parseSkillMarkdown(file, content, source);
     if (parsed.ok) {
       into.set(parsed.definition.name, parsed.definition);
     } else {
-      warnings.push(`${parsed.warning}（${dir}）`);
+      warnings.push(`${parsed.warning} (${dir})`);
     }
   }
 }

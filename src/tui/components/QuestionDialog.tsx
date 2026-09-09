@@ -86,8 +86,8 @@ export function QuestionDialog({ request, onReply }: QuestionDialogProps) {
   });
 
   const hint = multi
-    ? '↑/↓ move · space/1-4 toggle · enter confirm · esc skip'
-    : '↑/↓ move · 1-4 select · enter confirm · esc skip';
+    ? '↑↓ move · space/1-4 toggle · enter ok · esc skip'
+    : '↑↓ move · 1-4 choose · enter ok · esc skip';
   const theme = getTheme();
   // 问题与选项文案来自模型（上游不可控），一律 sanitize+物理折行后上屏
   return (

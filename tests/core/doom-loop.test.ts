@@ -111,12 +111,12 @@ describe('doom-loop 防护（runTurn 集成）', () => {
     expect(executed).toEqual(['x', 'x']);
     const requests = approvalRequests(events);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.request.reason).toContain('重复调用循环');
+    expect(requests[0]!.request.reason).toContain('Repeated identical tool call detected');
     expect(requests[0]!.request.toolName).toBe('echo');
     const messages = toolMessages(deps);
     expect(messages).toHaveLength(3);
     expect(messages[2]!.isError).toBe(true);
-    expect(messages[2]!.content).toContain('用户拒绝');
+    expect(messages[2]!.content).toContain('The user rejected this operation');
     expect(messages[2]!.content).toContain('别再重复同样的调用');
   });
 

@@ -15,11 +15,13 @@ import {
 const MAX_OUTPUT_CHARS = 30_000;
 
 const inputSchema = z.object({
-  url: z.string().describe('要抓取的页面 URL（http/https）'),
+  url: z.string().describe('Page URL to fetch (http/https)'),
   prompt: z
     .string()
     .optional()
-    .describe('可选：希望根据页面内容回答的问题，会附在页面文本末尾一并返回'),
+    .describe(
+      'Optional: a question to answer from the page content; it is appended to the page text in the result',
+    ),
 });
 
 const BLOCK_TAGS =
@@ -82,10 +84,10 @@ function decodeBody(buffer: ArrayBuffer, contentType: string): string {
 export const webFetchTool = defineTool({
   name: 'web_fetch',
   description:
-    '抓取一个 URL 的页面内容：HTML 自动转成纯文本，text/*、JSON、XML 等文本类内容原样返回，' +
-    `跟随重定向，超时 ${DEFAULT_WEB_TIMEOUT_MS / 1000}s，输出最多 ${MAX_OUTPUT_CHARS} 字符。` +
-    '传入 prompt 时问题会附在页面文本后一并返回，由你基于文本直接回答（不会再调用模型）。' +
-    '二进制或未知内容类型返回错误。',
+    'Fetch the content of a URL: HTML is converted to plain text automatically, and textual content such as text/*, JSON, and XML is returned as-is. ' +
+    `Follows redirects, times out after ${DEFAULT_WEB_TIMEOUT_MS / 1000}s, and returns at most ${MAX_OUTPUT_CHARS} characters. ` +
+    'When prompt is given, the question is appended to the page text in the result and you answer it from that text yourself (no further model call is made). ' +
+    'Binary or unknown content types return an error.',
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],
@@ -104,46 +106,46 @@ export const webFetchTool = defineTool({
     try {
       parsed = new URL(input.url);
     } catch {
-      return errorResult(`非法 URL：${input.url}`);
+      return errorResult(`Invalid URL: ${input.url}`);
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return errorResult(`仅支持 http/https URL：${input.url}`);
+      return errorResult(`Only http/https URLs are supported: ${input.url}`);
     }
     try {
       const response = await webGet(input.url, { signal: ctx.signal });
       if (!response.ok) {
-        return errorResult(`HTTP ${response.status} ${response.statusText}：${input.url}`);
+        return errorResult(`HTTP ${response.status} ${response.statusText}: ${input.url}`);
       }
       const contentType = response.headers.get('content-type') ?? '';
       const kind = classifyContent(contentType);
       if (kind === 'binary') {
         return errorResult(
-          `不支持的内容类型（${contentType === '' ? '未知' : contentType}），仅支持 HTML/文本类页面：${input.url}`,
+          `Unsupported content type (${contentType === '' ? 'unknown' : contentType}); only HTML/text pages are supported: ${input.url}`,
         );
       }
       const raw = decodeBody(await response.arrayBuffer(), contentType);
       const text = kind === 'html' ? htmlToText(raw) : raw;
       const body =
         text === ''
-          ? '(页面无文本内容)'
+          ? '(the page has no text content)'
           : truncate(
               text,
               MAX_OUTPUT_CHARS,
-              `[页面文本过长已截断，仅保留前 ${MAX_OUTPUT_CHARS} 字符]`,
+              `[Page text truncated: only the first ${MAX_OUTPUT_CHARS} characters are kept]`,
             );
       const output =
         input.prompt === undefined
           ? body
-          : `${body}\n\n---\n基于以上页面内容回答：${input.prompt}`;
+          : `${body}\n\n---\nAnswer based on the page content above: ${input.prompt}`;
       return { output };
     } catch (error) {
       if (ctx.signal.aborted) {
-        return errorResult(`抓取被中断：${input.url}`);
+        return errorResult(`Fetch interrupted: ${input.url}`);
       }
       if (isTimeoutError(error)) {
-        return errorResult(`抓取超时（${DEFAULT_WEB_TIMEOUT_MS / 1000}s）：${input.url}`);
+        return errorResult(`Fetch timed out (${DEFAULT_WEB_TIMEOUT_MS / 1000}s): ${input.url}`);
       }
-      return errorResult(`抓取失败：${errorMessage(error)}`);
+      return errorResult(`Fetch failed: ${errorMessage(error)}`);
     }
   },
 });

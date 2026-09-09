@@ -210,7 +210,7 @@ describe('task 工具组', () => {
     expect(manager.get('task_1')?.status).toBe('killed');
 
     const again = await stop.call({ taskId: 'task_1' }, ctx);
-    expect(again.output).toContain('已结束');
+    expect(again.output).toContain('already finished');
 
     const missing = await stop.call({ taskId: 'task_9' }, ctx);
     expect(missing.isError).toBe(true);
@@ -226,7 +226,7 @@ describe('task 工具组', () => {
 
   it('task_list 空列表与各状态任务', async () => {
     const list = createTaskListTool(manager);
-    expect((await list.call({}, ctx)).output).toBe('没有后台任务');
+    expect((await list.call({}, ctx)).output).toBe('No background tasks');
 
     manager.start('echo list-check', cwd);
     manager.start(LONG_RUNNING, cwd);
@@ -350,7 +350,7 @@ describe('后台任务 loop 集成', () => {
     // 主会话与子代理共享连接场景的路由：按 system prompt 区分脚本，消除消费顺序竞争
     const router: ChatProvider = {
       generate: (params) =>
-        params.systemPrompt.includes('代码探索子代理')
+        params.systemPrompt.includes('code exploration subagent')
           ? sub.generate(params)
           : main.generate(params),
     };

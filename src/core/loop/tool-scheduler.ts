@@ -112,8 +112,8 @@ export async function executeToolCalls(
     }
     const output = deps.signal.aborted
       ? INTERRUPTED_RESULT.output
-      : `用户拒绝了本次操作${
-          reply.feedback !== undefined && reply.feedback !== '' ? `：${reply.feedback}` : ''
+      : `The user rejected this operation${
+          reply.feedback !== undefined && reply.feedback !== '' ? `: ${reply.feedback}` : ''
         }`;
     record(index, toolCall, input, errorOf(output), 0, false);
     return false;
@@ -126,24 +126,31 @@ export async function executeToolCalls(
     try {
       input = JSON.parse(toolCall.arguments);
     } catch {
-      record(index, toolCall, input, errorOf(`工具参数不是合法 JSON：${toolCall.arguments}`), 0, false);
+      record(
+        index,
+        toolCall,
+        input,
+        errorOf(`Tool arguments are not valid JSON: ${toolCall.arguments}`),
+        0,
+        false,
+      );
       return null;
     }
     const tool = deps.registry.get(toolCall.name);
     if (tool === undefined) {
-      record(index, toolCall, input, errorOf(`未知工具：${toolCall.name}`), 0, false);
+      record(index, toolCall, input, errorOf(`Unknown tool: ${toolCall.name}`), 0, false);
       return null;
     }
     const decision = evaluatePermission(tool, input, deps.permission.getContext());
     if (decision.kind === 'deny') {
-      record(index, toolCall, input, errorOf(`权限拒绝：${decision.reason}`), 0, false);
+      record(index, toolCall, input, errorOf(`Permission denied: ${decision.reason}`), 0, false);
       return null;
     }
     // doom-loop：deny 之外的调用先记录签名，连续相同调用强制升级为 ask（bypass 模式也不例外）
     const doomLoopDetected = deps.doomLoop?.record(toolCall.name, toolCall.arguments) === true;
     const askReason = doomLoopDetected
-      ? `检测到重复调用循环：${toolCall.name} 已连续多次以完全相同的参数调用。` +
-        '确认确实需要继续请批准，否则拒绝并让模型调整思路。'
+      ? `Repeated identical tool call detected: ${toolCall.name} has been called several times in a row with exactly the same arguments. ` +
+        'Approve only if it really should continue; otherwise reject so the model changes approach.'
       : decision.kind === 'ask'
         ? decision.reason
         : null;
@@ -161,7 +168,14 @@ export async function executeToolCalls(
       });
       dispatchHookResult(deps.dispatchEvent, 'preToolUse', hookResult);
       if (hookResult.denied) {
-        record(index, toolCall, input, errorOf(`hook 拒绝：${hookResult.reason ?? ''}`), 0, false);
+        record(
+          index,
+          toolCall,
+          input,
+          errorOf(`Hook denied this call: ${hookResult.reason ?? ''}`),
+          0,
+          false,
+        );
         return null;
       }
     }
@@ -182,7 +196,7 @@ export async function executeToolCalls(
       try {
         result = await tool.call(pending.input, { cwd: deps.cwd, signal: deps.signal });
       } catch (error) {
-        result = errorOf(`工具执行异常：${errorMessage(error)}`);
+        result = errorOf(`Tool threw an exception: ${errorMessage(error)}`);
       }
       // durationMs 只计工具本身；postToolUse hooks 在 record 前跑完，保证结果落定前提示已上屏
       const durationMs = Date.now() - startedAt;

@@ -80,7 +80,7 @@ export class ApprovalManager {
 
   request(request: ApprovalRequest): Promise<ApprovalReply> {
     if (this.pending.has(request.id)) {
-      return Promise.resolve({ decision: 'reject', feedback: `重复的审批请求 id：${request.id}` });
+      return Promise.resolve({ decision: 'reject', feedback: `Duplicate approval request id: ${request.id}` });
     }
     return new Promise((resolve) => {
       this.pending.set(request.id, { request, resolve });

@@ -56,7 +56,7 @@ export async function resolvePrintPrompt(
   if (text === '') {
     return prompt;
   }
-  const body = truncated ? `${text}\n[…stdin 内容超过 1MB，已截断]` : text;
+  const body = truncated ? `${text}\n[…stdin exceeds 1MB, truncated]` : text;
   return `${prompt}\n\n--- stdin ---\n${body}`;
 }
 
@@ -130,12 +130,12 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
           break;
         case 'tool-call-completed':
           stderr.write(
-            `${event.isError ? '✗' : '✓'} ${describe(event.name, event.input)}（${event.durationMs}ms）\n`,
+            `${event.isError ? '✗' : '✓'} ${describe(event.name, event.input)} (${event.durationMs}ms)\n`,
           );
           break;
         case 'task-finished':
           stderr.write(
-            `⚙ ${event.taskId} ${event.status === 'completed' ? '已完成' : event.status === 'failed' ? '失败' : '已停止'}（exit ${event.exitCode ?? '未知'}）\n`,
+            `⚙ ${event.taskId} ${event.status === 'completed' ? 'completed' : event.status === 'failed' ? 'failed' : 'stopped'} (exit ${event.exitCode ?? 'unknown'})\n`,
           );
           break;
         case 'hook-notice':
@@ -145,11 +145,11 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
           stderr.write(`✗ ${event.message}\n`);
           break;
         case 'model-fallback':
-          stderr.write(`⚠ 模型 ${event.from} 失败，切换到 ${event.to}：${event.reason}\n`);
+          stderr.write(`⚠ Model ${event.from} failed, switching to ${event.to}: ${event.reason}\n`);
           break;
         case 'turn-complete':
           if (event.stopReason === 'max-steps') {
-            stderr.write(`✗ 已达到最大步数（${event.steps} 步），任务未正常收尾\n`);
+            stderr.write(`✗ Reached the maximum number of steps (${event.steps} steps); the task did not finish cleanly\n`);
           }
           break;
         default:
@@ -158,27 +158,27 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
     }
     // 交互请求的无头兜底（两种输出格式共用）：诊断写 stderr，自动拒绝并回喂说明
     if (event.type === 'approval-requested') {
-      stderr.write(`✗ 无头模式无法交互审批，已自动拒绝：${event.request.describeCall}\n`);
+      stderr.write(`✗ Headless mode cannot prompt for approval; auto-rejected: ${event.request.describeCall}\n`);
       deps.session.submit({
         type: 'approval-reply',
         id: event.request.id,
         reply: {
           decision: 'reject',
-          feedback: '当前是无头（-p/--print）模式，无法交互审批；如需放行请配置 permissionRules 或调整 --mode。',
+          feedback: 'This is headless (-p/--print) mode, so interactive approval is unavailable; to allow it, configure permissionRules or adjust --mode.',
         },
       });
       return;
     }
     if (event.type === 'plan-approval-requested') {
-      stderr.write('✗ 无头模式无法交互批准计划，已自动拒绝\n');
+      stderr.write('✗ Headless mode cannot prompt for plan approval; auto-rejected\n');
       deps.session.submit({
         type: 'plan-approval-reply',
         id: event.request.id,
         reply: {
           approved: false,
           feedback:
-            '当前是无头（-p/--print）模式，无法交互批准计划；' +
-            '请以文本形式输出计划，或去掉 --mode plan 在 TUI 中运行。',
+            'This is headless (-p/--print) mode, so interactive plan approval is unavailable; ' +
+            'output the plan as text, or drop --mode plan and run in the TUI.',
         },
       });
     }
@@ -194,12 +194,12 @@ export async function runPrintMode(deps: PrintModeDeps): Promise<number> {
       return;
     }
     stderr.write(
-      `…还有 ${running.length} 个后台任务在运行，至多等待 ${TASK_DRAIN_MS / 1000}s\n`,
+      `…${running.length} background task(s) still running; waiting up to ${TASK_DRAIN_MS / 1000}s\n`,
     );
     await Promise.all(running.map((task) => tasks.waitForSettled(task.id, TASK_DRAIN_MS)));
     for (const task of tasks.list()) {
       if (task.status === 'running') {
-        stderr.write(`✗ 后台任务 ${task.id} 未在等待期内结束，已终止\n`);
+        stderr.write(`✗ Background task ${task.id} did not finish within the wait window; terminated\n`);
         await tasks.stop(task.id);
       }
     }

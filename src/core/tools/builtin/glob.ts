@@ -10,16 +10,21 @@ import { displayPath, errorResult, resolvePath, statKind, walkFiles } from './fs
 const MAX_RESULTS = 1000;
 
 const inputSchema = z.object({
-  pattern: z.string().describe('glob 模式，如 "src/**/*.ts"；* 不跨目录，** 跨目录'),
-  path: z.string().optional().describe('搜索根目录，相对 cwd 或绝对路径，默认 cwd'),
+  pattern: z
+    .string()
+    .describe('Glob pattern, e.g. "src/**/*.ts"; * does not cross directories, ** does'),
+  path: z
+    .string()
+    .optional()
+    .describe('Search root, relative to cwd or absolute; defaults to cwd'),
 });
 
 export const globTool = defineTool({
   name: 'glob',
   description:
-    '按文件名模式查找文件（探索代码库的起点：先找到文件再 read / grep）。' +
-    '返回相对 cwd 的路径列表（跳过 .git / node_modules），' +
-    `最多 ${MAX_RESULTS} 条；* 不跨目录，** 跨目录。`,
+    'Find files by name pattern (the starting point for exploring a codebase: locate files first, then read / grep them). ' +
+    'Returns paths relative to cwd (skipping .git / node_modules), ' +
+    `up to ${MAX_RESULTS} results; * does not cross directories, ** does.`,
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],
@@ -28,13 +33,13 @@ export const globTool = defineTool({
     const root = resolvePath(ctx.cwd, input.path ?? '.');
     const stats = await statKind(root);
     if (!stats.isDirectory) {
-      return errorResult(`目录不存在：${displayPath(ctx.cwd, root)}`);
+      return errorResult(`Directory not found: ${displayPath(ctx.cwd, root)}`);
     }
     let isMatch;
     try {
       isMatch = picomatch(input.pattern, { dot: true });
     } catch (error) {
-      return errorResult(`非法的 glob 模式：${errorMessage(error)}`);
+      return errorResult(`Invalid glob pattern: ${errorMessage(error)}`);
     }
     const files = await walkFiles(root);
     const matched = files
@@ -42,12 +47,12 @@ export const globTool = defineTool({
       .map((file) => displayPath(ctx.cwd, file))
       .toSorted();
     if (matched.length === 0) {
-      return { output: '没有匹配的文件' };
+      return { output: 'No matching files' };
     }
     const shown = matched.slice(0, MAX_RESULTS);
     const note =
       matched.length > MAX_RESULTS
-        ? `\n[结果过多已截断，共 ${matched.length} 个匹配]`
+        ? `\n[Too many results, truncated: ${matched.length} matches in total]`
         : '';
     return { output: shown.join('\n') + note };
   },

@@ -104,27 +104,27 @@ function stringList(field: string | string[] | undefined): string[] | undefined 
 export function parseSubagentMarkdown(fileName: string, content: string): ParseSubagentResult {
   const fail = (reason: string): ParseSubagentResult => ({
     ok: false,
-    warning: `子代理定义 ${fileName} 已忽略：${reason}`,
+    warning: `Subagent definition ${fileName} ignored: ${reason}`,
   });
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content);
   if (match === null) {
-    return fail('缺少 frontmatter（文件须以 --- 包裹的元信息开头）');
+    return fail('Missing frontmatter (the file must start with metadata wrapped in ---)');
   }
   const fields = parseFrontmatter(match[1]!);
   const name = scalar(fields['name']);
   if (name === undefined) {
-    return fail('frontmatter 缺少必填字段 name');
+    return fail('frontmatter is missing required field name');
   }
   if (!NAME_PATTERN.test(name)) {
-    return fail(`name "${name}" 不合法（只允许字母/数字/连字符/下划线，字母开头）`);
+    return fail(`Invalid name "${name}" (only letters/digits/hyphens/underscores, and must start with a letter)`);
   }
   const description = scalar(fields['description']);
   if (description === undefined) {
-    return fail(`子代理 ${name} 缺少必填字段 description`);
+    return fail(`Subagent ${name} is missing required field description`);
   }
   const prompt = (match[2] ?? '').trim();
   if (prompt === '') {
-    return fail(`子代理 ${name} 的正文（system prompt）为空`);
+    return fail(`Subagent ${name} has an empty body (system prompt)`);
   }
   const definition: SubagentDefinition = { name, description, prompt };
   const tools = stringList(fields['tools']);
@@ -152,7 +152,7 @@ function loadDir(
       .filter((file) => file.endsWith('.md'))
       .toSorted();
   } catch {
-    warnings.push(`子代理目录 ${dir} 不可读，已跳过`);
+    warnings.push(`Subagent directory ${dir} unreadable, skipped`);
     return;
   }
   for (const file of files) {
@@ -160,14 +160,14 @@ function loadDir(
     try {
       content = readFileSync(join(dir, file), 'utf8');
     } catch {
-      warnings.push(`子代理定义 ${join(dir, file)} 读取失败，已忽略`);
+      warnings.push(`Subagent definition ${join(dir, file)} read failed; ignored`);
       continue;
     }
     const parsed = parseSubagentMarkdown(file, content);
     if (parsed.ok) {
       into.set(parsed.definition.name, parsed.definition);
     } else {
-      warnings.push(`${parsed.warning}（${dir}）`);
+      warnings.push(`${parsed.warning} (${dir})`);
     }
   }
 }

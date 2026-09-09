@@ -132,11 +132,11 @@ describe('ApprovalDialog 冒烟渲染', () => {
         onReply={() => {}}
       />,
     );
-    expect(output).toContain('Permission needed: Bash git status');
+    expect(output).toContain('Allow Bash git status?');
     expect(output).toContain('git status');
-    expect(output).toContain('1. Yes');
-    expect(output).toContain("don't ask again for Bash(git *)");
-    expect(output).toContain('3. No');
+    expect(output).toContain('1. Allow once');
+    expect(output).toContain("Always allow Bash(git *) this session");
+    expect(output).toContain('3. Deny');
   });
 });
 
@@ -174,7 +174,7 @@ describe('App 冒烟渲染', () => {
     const output = renderToString(
       <App session={session} registry={registry} model="fake-model" cwd={process.cwd()} />,
     );
-    expect(output).toContain('Try ');
+    expect(output).toContain('e.g. ');
     expect(output).toContain('? default');
     expect(output).toContain('fake-model');
   });

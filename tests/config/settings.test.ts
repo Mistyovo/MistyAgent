@@ -144,14 +144,14 @@ describe('loadSettings', () => {
 
   it('fallbackModels 校验：空字符串 / 非数组均报配置无效', () => {
     writeSettings(projectDir, { fallbackModels: [''] });
-    expect(() => load()).toThrowError(/配置无效/);
+    expect(() => load()).toThrowError(/Invalid config/);
     writeSettings(projectDir, { fallbackModels: 'not-an-array' });
-    expect(() => load()).toThrowError(/配置无效/);
+    expect(() => load()).toThrowError(/Invalid config/);
   });
 
   it('合并结果不合法时抛错', () => {
     writeSettings(projectDir, { temperature: 5 });
-    expect(() => load()).toThrowError(/配置无效/);
+    expect(() => load()).toThrowError(/Invalid config/);
   });
 });
 

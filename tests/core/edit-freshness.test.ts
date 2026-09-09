@@ -29,7 +29,7 @@ describe('edit 新鲜度与先读约束', () => {
       ctx,
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('先 read');
+    expect(result.output).toContain('has not been read in this session');
   });
 
   it('读取后被外部修改的文件拒绝 edit，重新 read 后恢复', async () => {
@@ -42,7 +42,7 @@ describe('edit 新鲜度与先读约束', () => {
       ctx,
     );
     expect(stale.isError).toBe(true);
-    expect(stale.output).toContain('已被修改');
+    expect(stale.output).toContain('has been modified since you last read it');
     expect(await readFile(path.join(cwd, 'b.txt'), 'utf8')).toBe('v2-changed');
 
     await readTool.call({ path: 'b.txt' }, ctx);
@@ -86,7 +86,7 @@ describe('write 新鲜度与未读覆盖提示', () => {
     await writeFile(path.join(cwd, 'w.txt'), 'old content', 'utf8');
     const result = await writeTool.call({ path: 'w.txt', content: 'new' }, ctx);
     expect(result.isError).toBeUndefined();
-    expect(result.output).toContain('未读取过');
+    expect(result.output).toContain('not read in this session');
     expect(await readFile(path.join(cwd, 'w.txt'), 'utf8')).toBe('new');
   });
 
@@ -96,7 +96,7 @@ describe('write 新鲜度与未读覆盖提示', () => {
     await writeFile(path.join(cwd, 'w2.txt'), 'external-change', 'utf8');
     const result = await writeTool.call({ path: 'w2.txt', content: 'mine' }, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('已被修改');
+    expect(result.output).toContain('has been modified since you last read it');
     expect(await readFile(path.join(cwd, 'w2.txt'), 'utf8')).toBe('external-change');
   });
 });
@@ -110,7 +110,7 @@ describe('edit 空白/换行容错匹配', () => {
       ctx,
     );
     expect(result.isError).toBeUndefined();
-    expect(result.output).toContain('容错匹配');
+    expect(result.output).toContain('tolerant match');
     expect(await readFile(path.join(cwd, 'crlf.txt'), 'utf8')).toBe('one\r\nTWO\r\nTHREE\r\n');
   });
 
@@ -135,7 +135,7 @@ describe('edit 空白/换行容错匹配', () => {
       ctx,
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('3 处');
+    expect(result.output).toContain('matched 3 places');
 
     const all = await editTool.call(
       { path: 'dup.txt', old_string: '  foo bar', new_string: 'x', replace_all: true },
@@ -153,7 +153,7 @@ describe('edit 空白/换行容错匹配', () => {
       ctx,
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('未在');
+    expect(result.output).toContain('was not found in');
   });
 
   it('替换串中的 $ 模式按字面写入，不被展开', async () => {

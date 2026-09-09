@@ -86,7 +86,7 @@ describe('MCP tool 适配层', () => {
   });
 
   it('description 缺省时回退为占位文案', () => {
-    expect(stubTool().description).toBe('MCP 工具 fake:echo');
+    expect(stubTool().description).toBe('MCP tool fake:echo');
     expect(stubTool({ description: '回显' }).description).toBe('回显');
   });
 
@@ -109,7 +109,7 @@ describe('MCP tool 适配层', () => {
     const tool = stubTool();
     const result = await tool.call('不是对象', { cwd, signal: new AbortController().signal });
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('JSON 对象');
+    expect(result.output).toContain('JSON object');
   });
 });
 
@@ -387,7 +387,7 @@ describe('MCP 调用中断与超时（适配层）', () => {
     controller.abort();
     const result = await pending;
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('中断');
+    expect(result.output).toContain('interrupted');
     expect(result.output).toContain('fake:hang');
   });
 
@@ -402,7 +402,7 @@ describe('MCP 调用中断与超时（适配层）', () => {
     controller.abort();
     const result = await adaptWith(client).call({}, { cwd, signal: controller.signal });
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('中断');
+    expect(result.output).toContain('interrupted');
   });
 
   it('RequestTimeout 错误映射为带秒数的超时文案', async () => {
@@ -416,7 +416,7 @@ describe('MCP 调用中断与超时（适配层）', () => {
       { cwd, signal: new AbortController().signal },
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain(`超时（${MCP_CALL_TIMEOUT_MS / 1000}s`);
+    expect(result.output).toContain(`timed out (no response in ${MCP_CALL_TIMEOUT_MS / 1000}s`);
     expect(result.output).toContain('fake:slow');
   });
 
@@ -431,7 +431,7 @@ describe('MCP 调用中断与超时（适配层）', () => {
       { cwd, signal: new AbortController().signal },
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('MCP 工具调用失败：connection reset');
+    expect(result.output).toContain('MCP tool call failed: connection reset');
   });
 });
 
@@ -450,7 +450,7 @@ describe('MCP 调用中断与超时（真实 stdio server 不回包）', () => {
         controller.abort();
         const result = await pending;
         expect(result.isError).toBe(true);
-        expect(result.output).toContain('中断');
+        expect(result.output).toContain('interrupted');
         expect(result.output).toContain('hanger:hang');
       } finally {
         await manager.close();

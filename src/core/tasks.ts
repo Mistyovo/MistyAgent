@@ -164,7 +164,7 @@ export class TaskManager {
     });
     // spawn 失败（如 cwd 不存在）：error 后不一定有 close，两条路径都要能落定
     child.on('error', (error) => {
-      this.appendOutput(tracked, `[spawn 失败] ${error.message}`);
+      this.appendOutput(tracked, `[spawn failed] ${error.message}`);
       this.settle(tracked, null);
     });
     // 等 close 而不是 exit：stdio 冲刷完毕后输出缓冲才完整

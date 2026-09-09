@@ -10,16 +10,16 @@ export function buildSkillsSystemPromptSection(skills: readonly SkillDefinition[
     return '';
   }
   const lines = skills.map((skill) => {
-    const when = skill.whenToUse === undefined ? '' : `（何时使用：${skill.whenToUse}）`;
+    const when = skill.whenToUse === undefined ? '' : ` (when to use: ${skill.whenToUse})`;
     return `- ${skill.name} — ${skill.description}${when}`;
   });
   return [
-    '## 可用技能',
+    '## Available skills',
     '',
     ...lines,
     '',
-    '当用户意图命中某技能的 when_to_use 或 description 时，调用 skill 工具（传 name）' +
-    '把技能正文注入当前会话并立即照其执行，不要绕开技能手工实现；' +
-    '正文可能含 $ARGUMENTS 占位符，用 args 参数传入用户给的参数。',
+    "When the user's intent matches a skill's when_to_use or description, invoke the skill tool (passing name) " +
+    'to inject the skill body into the current session and follow it immediately — do not reimplement it by hand. ' +
+    'The body may contain $ARGUMENTS placeholders; pass the arguments the user gave through the args parameter.',
   ].join('\n');
 }

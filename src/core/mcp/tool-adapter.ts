@@ -28,20 +28,20 @@ function contentItemToText(item: unknown): string {
     return content.text;
   }
   if (content.type === 'image' || content.type === 'audio') {
-    const mime = typeof content.mimeType === 'string' ? content.mimeType : '未知类型';
-    return `[${content.type} 内容（${mime}），暂不支持回显]`;
+    const mime = typeof content.mimeType === 'string' ? content.mimeType : 'unknown type';
+    return `[${content.type} content (${mime}), display not supported yet]`;
   }
   if (content.type === 'resource_link') {
     const label = typeof content.name === 'string' ? content.name : '';
-    const uri = typeof content.uri === 'string' ? `（${content.uri}）` : '';
-    return `[资源链接${label === '' ? '' : `：${label}`}${uri}]`;
+    const uri = typeof content.uri === 'string' ? ` (${content.uri})` : '';
+    return `[resource link${label === '' ? '' : `: ${label}`}${uri}]`;
   }
   if (content.type === 'resource' && typeof content.resource === 'object' && content.resource !== null) {
     const resource = content.resource as { text?: unknown; uri?: unknown };
     if (typeof resource.text === 'string') {
       return resource.text;
     }
-    return `[嵌入资源${typeof resource.uri === 'string' ? `：${resource.uri}` : ''}]`;
+    return `[embedded resource${typeof resource.uri === 'string' ? `: ${resource.uri}` : ''}]`;
   }
   return JSON.stringify(item);
 }
@@ -58,7 +58,7 @@ function resultToText(result: McpCallResultLike): string {
   if (parts.length === 0 && result.structuredContent !== undefined) {
     parts.push(JSON.stringify(result.structuredContent));
   }
-  return parts.length === 0 ? '（无输出）' : parts.join('\n');
+  return parts.length === 0 ? '(no output)' : parts.join('\n');
 }
 
 /**
@@ -72,7 +72,7 @@ function resultToText(result: McpCallResultLike): string {
 export function adaptMcpTool(serverName: string, client: McpClient, info: McpToolInfo): Tool {
   const name = `mcp__${serverName}__${info.name}`;
   const description =
-    info.description !== '' ? info.description : `MCP 工具 ${serverName}:${info.name}`;
+    info.description !== '' ? info.description : `MCP tool ${serverName}:${info.name}`;
   return {
     name,
     description,
@@ -82,7 +82,7 @@ export function adaptMcpTool(serverName: string, client: McpClient, info: McpToo
     describeCall: () => `MCP ${serverName}:${info.name}`,
     call: async (input, ctx): Promise<ToolResult> => {
       if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-        return { output: 'MCP 工具参数必须是 JSON 对象', isError: true };
+        return { output: 'MCP tool arguments must be a JSON object', isError: true };
       }
       try {
         const result = await client.callTool(info.name, input as Record<string, unknown>, {
@@ -95,15 +95,15 @@ export function adaptMcpTool(serverName: string, client: McpClient, info: McpToo
       } catch (error) {
         // SDK 把 abort 也包成 RequestTimeout 编码的 McpError，中断判定须在超时之前
         if (ctx.signal.aborted) {
-          return { output: `MCP 工具调用被中断：${serverName}:${info.name}`, isError: true };
+          return { output: `MCP tool call interrupted: ${serverName}:${info.name}`, isError: true };
         }
         if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
           return {
-            output: `MCP 工具调用超时（${MCP_CALL_TIMEOUT_MS / 1000}s 无响应）：${serverName}:${info.name}`,
+            output: `MCP tool call timed out (no response in ${MCP_CALL_TIMEOUT_MS / 1000}s): ${serverName}:${info.name}`,
             isError: true,
           };
         }
-        return { output: `MCP 工具调用失败：${errorMessage(error)}`, isError: true };
+        return { output: `MCP tool call failed: ${errorMessage(error)}`, isError: true };
       }
     },
     toJSONSchema: () => ({ name, description, parameters: info.inputSchema }),

@@ -4,7 +4,7 @@ import { todoItemSchema, type TodoStore } from '../../todos';
 import { defineTool, type Tool } from '../tool';
 
 const inputSchema = z.object({
-  todos: z.array(todoItemSchema).describe('全量替换后的完整任务列表'),
+  todos: z.array(todoItemSchema).describe('The complete task list after the replacement'),
 });
 
 /**
@@ -15,10 +15,10 @@ export function createTodoTool(store: TodoStore): Tool {
   return defineTool({
     name: 'todo',
     description:
-      '更新会话级任务列表（全量替换整个列表，不是增量修改），列表对用户可见，反映真实进度。' +
-      '预计三步以上的任务在开始时建立列表，把工作拆成可验证的小步；' +
-      '进行中保持恰好一项 in_progress，完成一项立即标 done 并让下一项进入。' +
-      '已 done 的任务保持原样，不要修改其内容。',
+      'Update the session task list (this replaces the whole list, not an incremental edit). The list is visible to the user and should reflect real progress. ' +
+      'For work expected to take more than about three steps, create the list up front and break the work into verifiable small steps. ' +
+      'Keep exactly one item in_progress; when an item finishes, mark it done immediately and move the next one in. ' +
+      'Leave already-done items untouched — do not rewrite their content.',
     inputSchema,
     isReadOnly: () => true,
     accesses: () => [{ kind: 'read' }],
@@ -29,8 +29,10 @@ export function createTodoTool(store: TodoStore): Tool {
         return Promise.resolve({ output: error, isError: true });
       }
       const active = input.todos.find((todo) => todo.status === 'in_progress');
-      const suffix = active === undefined ? '' : `，进行中：${active.content}`;
-      return Promise.resolve({ output: `已更新任务列表（共 ${input.todos.length} 项${suffix}）` });
+      const suffix = active === undefined ? '' : `, in progress: ${active.content}`;
+      return Promise.resolve({
+        output: `Task list updated (${input.todos.length} items${suffix})`,
+      });
     },
   });
 }

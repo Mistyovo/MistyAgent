@@ -38,7 +38,7 @@ describe('agent 工具（烂尾救援 salvage）', () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.output).toBe(
-      '子代理未正常收官，以下为收尾总结\n收尾总结：已确认 foo 在 a.ts:1',
+      'The subagent did not wrap up normally; the following is its salvage summary\n收尾总结：已确认 foo 在 a.ts:1',
     );
     expect(provider.requests).toHaveLength(3);
     // 收尾轮：同一消息历史续跑（初始 prompt + 探索轨迹 + 收尾指令），工具为空
@@ -53,9 +53,9 @@ describe('agent 工具（烂尾救援 salvage）', () => {
     expect(salvage.messages[0]).toEqual({ role: 'user', content: 'p' });
     const last = salvage.messages[3]!;
     expect(last.role).toBe('user');
-    expect(last.role === 'user' && last.content).toContain('立即停止探索');
-    expect(last.role === 'user' && last.content).toContain('禁止调用工具');
-    expect(last.role === 'user' && last.content).toContain('未验证');
+    expect(last.role === 'user' && last.content).toContain('stop exploring immediately');
+    expect(last.role === 'user' && last.content).toContain('do not call any tool');
+    expect(last.role === 'user' && last.content).toContain('unverified');
   });
 
   it('completed 烂尾（有工具历史但无文本）同样救援，但不加前缀', async () => {
@@ -90,7 +90,7 @@ describe('agent 工具（烂尾救援 salvage）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('没有产出文本结论');
+    expect(result.output).toContain('The subagent produced no text conclusion');
     expect(provider.requests).toHaveLength(3);
   });
 
@@ -134,7 +134,7 @@ describe('agent 工具（烂尾救援 salvage）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('没有产出文本结论');
+    expect(result.output).toContain('The subagent produced no text conclusion');
     expect(provider.requests).toHaveLength(1);
   });
 });

@@ -54,12 +54,12 @@ describe('TaskBoard', () => {
 
     expect(board.render()).toBe(
       [
-        '已确认的事实：',
-        '- foo 定义在 a.ts:1（Agent(explore)）',
-        '- bar 读取配置项 x（Agent(explore)）',
+        'Confirmed facts:',
+        '- foo 定义在 a.ts:1 (Agent(explore))',
+        '- bar 读取配置项 x (Agent(explore))',
         '',
-        '已排除的方向（不要重复尝试）：',
-        '- 改配置中心方向已排除（Agent(plan)）',
+        'Ruled-out directions (do not retry):',
+        '- 改配置中心方向已排除 (Agent(plan))',
       ].join('\n'),
     );
   });
@@ -68,7 +68,7 @@ describe('TaskBoard', () => {
     const board = new TaskBoard();
     board.add('fact', 'f', 'A');
 
-    expect(board.render()).toContain('已排除的方向（不要重复尝试）：\n（暂无）');
+    expect(board.render()).toContain('Ruled-out directions (do not retry):\n(none yet)');
   });
 
   it('reset：清空条目与去重键', () => {

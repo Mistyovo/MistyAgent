@@ -49,14 +49,14 @@ describe('ask_user 工具', () => {
     const tool = createAskUserTool();
     const result = await tool.call(validInput, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('无头');
-    expect(result.output).toContain('自行决策');
+    expect(result.output).toContain('headless');
+    expect(result.output).toContain('decide from the information you have');
   });
 
   it('answers 回喂：输出用户选择', async () => {
     const tool = createAskUserTool(replyWith(['甲']));
     const result = await tool.call(validInput, ctx);
-    expect(result.output).toBe('用户选择了：甲');
+    expect(result.output).toBe('User selected: 甲');
     expect(result.isError).toBeUndefined();
   });
 
@@ -64,14 +64,14 @@ describe('ask_user 工具', () => {
     const tool = createAskUserTool(replyCancelled);
     const result = await tool.call(validInput, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('用户取消了提问');
+    expect(result.output).toContain('The user cancelled the question');
   });
 
   it('空 answers 回喂：按未作答处理', async () => {
     const tool = createAskUserTool(replyWith([]));
     const result = await tool.call(validInput, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('没有选择任何选项');
+    expect(result.output).toContain('The user selected no option');
   });
 });
 
@@ -157,7 +157,7 @@ describe('ask_user 接线：loop 与 session', () => {
     // 交互型工具不弹审批
     expect(events.some((e) => e.type === 'approval-requested')).toBe(false);
     const toolMessage = session.getMessages()[2] as ToolMessage;
-    expect(toolMessage.content).toBe('用户选择了：乙');
+    expect(toolMessage.content).toBe('User selected: 乙');
     expect(toolMessage.isError).toBeUndefined();
     // 回答进入了下一步请求的历史
     expect(provider.requests[1]!.messages.map((m) => m.role)).toEqual([
@@ -181,7 +181,7 @@ describe('ask_user 接线：loop 与 session', () => {
     expect(result.stopReason).toBe('completed');
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('用户取消了提问');
+    expect(toolMessage.content).toContain('The user cancelled the question');
   });
 
   it('提问挂起期间 interrupt：挂起落定 cancelled，turn 以 interrupted 收尾', async () => {
@@ -215,7 +215,7 @@ describe('ask_user 接线：loop 与 session', () => {
     expect(events.some((e) => e.type === 'question-asked')).toBe(false);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('自行决策');
+    expect(toolMessage.content).toContain('decide from the information you have');
   });
 
   it('同一批多个 ask_user 串行独占：第二问等第一问回答后才开始', async () => {
@@ -257,6 +257,6 @@ describe('ask_user 接线：loop 与 session', () => {
     const toolMessages = session
       .getMessages()
       .filter((m): m is ToolMessage => m.role === 'tool');
-    expect(toolMessages.map((m) => m.content)).toEqual(['用户选择了：好', '用户选择了：好']);
+    expect(toolMessages.map((m) => m.content)).toEqual(['User selected: 好', 'User selected: 好']);
   });
 });

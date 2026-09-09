@@ -58,8 +58,8 @@ describe('agent 工具（tasks 并行批量）', () => {
     expect(result.output).toContain('## [1] explore · 找 foo\n结论（p-foo）');
     expect(result.output).toContain('## [2] plan · 规划\n结论（p-plan）');
     // 每个子任务仍是独立 runTurn：各自的消息数组与系统提示，不共享状态
-    const exploreReq = seen.find((r) => r.systemPrompt.includes('代码探索子代理'))!;
-    const planReq = seen.find((r) => r.systemPrompt.includes('实现规划子代理'))!;
+    const exploreReq = seen.find((r) => r.systemPrompt.includes('You are a code exploration subagent.'))!;
+    const planReq = seen.find((r) => r.systemPrompt.includes('You are an implementation planning subagent.'))!;
     expect(exploreReq.messages[0]).toEqual({ role: 'user', content: 'p-foo' });
     expect(planReq.messages[0]).toEqual({ role: 'user', content: 'p-plan' });
     expect(exploreReq.messages).not.toBe(planReq.messages);
@@ -85,7 +85,7 @@ describe('agent 工具（tasks 并行批量）', () => {
     expect(result.isError).toBeUndefined();
     expect(result.output).toContain('## [1] explore · 任务一\n结论A：一切正常');
     expect(result.output).toContain('## [2] explore · 任务二 ✗');
-    expect(result.output).toContain('没有产出文本结论');
+    expect(result.output).toContain('The subagent produced no text conclusion');
     expect(provider.requests).toHaveLength(2);
   });
 
@@ -105,7 +105,7 @@ describe('agent 工具（tasks 并行批量）', () => {
     expect(result.isError).toBeUndefined();
     expect(result.output).toContain('## [1] explore · 正常\n结论A');
     expect(result.output).toContain('## [2] nope · 坏类型 ✗');
-    expect(result.output).toContain('未知子代理类型：nope');
+    expect(result.output).toContain('Unknown subagent type: nope');
     expect(provider.requests).toHaveLength(1);
   });
 
@@ -190,7 +190,7 @@ describe('agent 工具（tasks 并行批量）', () => {
     expect(result.output).not.toContain('单发');
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]!.messages).toEqual([{ role: 'user', content: '批量 prompt' }]);
-    expect(provider.requests[0]!.systemPrompt).toContain('代码探索子代理');
+    expect(provider.requests[0]!.systemPrompt).toContain('You are a code exploration subagent.');
   });
 
   it('单发模式缺任一必填字段 → isError 说明用法', async () => {
@@ -242,7 +242,7 @@ describe('agent 工具（tasks 批量后台）', () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.output).toContain('task_1');
-    expect(result.output).toContain('2 个任务');
+    expect(result.output).toContain('2 tasks');
     expect(
       tool.describeCall({
         tasks: [
@@ -255,7 +255,7 @@ describe('agent 工具（tasks 批量后台）', () => {
     const settled = await manager.waitForSettled('task_1', 5000);
     expect(settled).toMatchObject({ kind: 'agent', status: 'completed', exitCode: 0 });
     const buffered = manager.output('task_1')!.output;
-    expect(buffered).toContain('--- 最终结论 ---');
+    expect(buffered).toContain('--- Final conclusions ---');
     expect(buffered).toContain('## [1] explore · 任务一');
     expect(buffered).toContain('结论A');
     expect(buffered).toContain('## [2] plan · 任务二');
@@ -280,7 +280,7 @@ describe('agent 工具（tasks 批量后台）', () => {
 
     const settled = await manager.waitForSettled('task_1', 5000);
     expect(settled).toMatchObject({ kind: 'agent', status: 'failed' });
-    expect(manager.output('task_1')!.output).toContain('未知子代理类型：nope');
+    expect(manager.output('task_1')!.output).toContain('Unknown subagent type: nope');
   });
 
   it('宿主缺 TaskManager 时批量后台报错回喂', async () => {
@@ -295,7 +295,7 @@ describe('agent 工具（tasks 批量后台）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('不支持后台子代理');
+    expect(result.output).toContain('Background subagents are not supported');
     expect(provider.requests).toHaveLength(0);
   });
 });

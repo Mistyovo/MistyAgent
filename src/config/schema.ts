@@ -28,7 +28,7 @@ export const hookEntrySchema = z.object({
           return false;
         }
       },
-      { message: 'matcher 不是合法正则表达式' },
+      { message: 'matcher is not a valid regular expression' },
     )
     .optional(),
   command: z.string().min(1),

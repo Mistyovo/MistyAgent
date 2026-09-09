@@ -16,58 +16,58 @@ export function parseMemoryType(raw: unknown): MemoryType | undefined {
 }
 
 export const TYPES_SECTION: readonly string[] = [
-  '## 记忆类型',
+  '## Memory types',
   '',
-  '记忆分四种，只存无法从当前项目状态推导的内容：',
+  'There are four kinds of memory, and only content that cannot be derived from the current project state is stored:',
   '',
-  '- **user**：用户画像——角色、目标、偏好、知识背景。了解到用户的角色或偏好时就保存，用来在未来对话里量身定制协作方式（对资深工程师和编程初学者的讲法应该不同）。不要记带负面评判或与工作无关的内容。',
-  '- **feedback**：用户对你工作方式的纠偏与确认——「别这么做」和「就这么做」都记。纠正（「不对」「别这样」）容易注意到；确认（「对，就这样」「保持这种做法」）更安静，也要留意。只记纠正会避开旧错但偏离已验证的做法。正文先写规则本身，再写 **Why:**（用户给的理由，常是过往事故或强偏好）与 **How to apply:**（何时何地生效）两行——知道原因才能在边界情况自己判断，而不是盲从规则。',
-  '- **project**：项目动态——谁在做什么、为什么、什么时候截止，这些从代码和 git 历史里看不出来。这类状态变化快，发现变化就更新。保存时把用户口中的相对日期转成绝对日期（「周四」→「2026-03-05」），否则时过境迁就无法解读。',
-  '- **reference**：外部系统指针——信息在项目之外的什么地方，例如 bug 跟踪在某个 Linear 项目、反馈在某个 Slack 频道、监控面板在某个 URL。用户提到外部系统或其用途时保存，下次用户引用该系统时知道去哪查。',
+  '- **user**: The user profile — their role, goals, preferences, and background. Save it whenever you learn about the user\'s role or preferences; it tailors how you collaborate in future conversations (a senior engineer and a programming beginner should be taught differently). Do not record negative judgements or anything unrelated to the work.',
+  '- **feedback**: The user\'s corrections and confirmations of how you work — record both "don\'t do that" and "keep doing that". Corrections ("no", "not like that") are easy to notice; confirmations ("yes, exactly", "keep this approach") are quieter but matter just as much. Recording only corrections avoids old mistakes but drifts away from approaches already validated. Write the rule itself first, then two lines: **Why:** (the reason the user gave, often a past incident or a strong preference) and **How to apply:** (when and where it takes effect) — knowing the reason lets you judge edge cases yourself instead of following the rule blindly.',
+  '- **project**: Project dynamics — who is doing what, why, and by when; none of that is visible in the code or git history. This kind of state changes quickly, so update it as it changes. When saving, convert relative dates the user mentions into absolute ones ("Thursday" → "2026-03-05"), otherwise they become unreadable with time.',
+  '- **reference**: Pointers to external systems — where information lives outside the project, e.g. bug tracking in a particular Linear project, feedback in a Slack channel, a monitoring dashboard at some URL. Save it when the user mentions an external system or its purpose, so you know where to look when they refer to it later.',
 ];
 
 export const WHAT_NOT_TO_SAVE_SECTION: readonly string[] = [
-  '## 不要存什么',
+  '## What not to save',
   '',
-  '能从当前项目状态推导出来的一律不存：',
+  'Never store anything derivable from the current project state:',
   '',
-  '- 代码模式、约定、架构、文件路径、项目结构——读代码即可得到。',
-  '- git 历史、最近的改动、谁改了什么——`git log` / `git blame` 才是权威。',
-  '- 调试方案与修复配方——修复在代码里，背景在 commit message 里。',
-  '- AGENTS.md 等文档里已经写明的内容。',
-  '- 临时任务状态：进行中的工作、临时状态、当前对话的上下文。',
+  '- Code patterns, conventions, architecture, file paths, project structure — reading the code gives you these.',
+  '- Git history, recent changes, who changed what — `git log` / `git blame` are authoritative.',
+  '- Debugging approaches and fix recipes — the fix is in the code, the context is in the commit message.',
+  '- Anything already written down in AGENTS.md or similar documentation.',
+  '- Transient task state: work in progress, temporary conditions, the context of the current conversation.',
   '',
-  '即使用户明确要求保存，以上排除项依然成立。如果用户要存的是 PR 列表、活动总结之类，先问清楚其中令人意外或不显然的部分是什么——那才值得留。',
+  'These exclusions hold even when the user explicitly asks you to save something. If what they want saved is a list of PRs, an activity summary, or the like, first ask what was surprising or non-obvious about it — that part is what is worth keeping.',
 ];
 
 export const WHEN_TO_ACCESS_SECTION: readonly string[] = [
-  '## 何时读取记忆',
+  '## When to read memory',
   '',
-  '- 记忆看似与当前任务相关，或用户提到之前对话里的工作时。',
-  '- 用户明确要求你查看、回忆或记住时，必须读记忆。',
-  '- 记忆可能随时间过时：把它当作「某个时间点曾经成立」的上下文。基于记忆回答或行动之前，先读相关文件或资源的当前状态验证它仍然成立。记忆与当前观察冲突时信当前观察，并更新或删除过时记忆，而不是照旧行动。',
+  '- When a memory looks relevant to the current task, or the user refers to work from an earlier conversation.',
+  '- When the user explicitly asks you to check, recall, or remember something, you must read memory.',
+  '- Memories go stale over time: treat them as context that was once true. Before answering or acting on a memory, read the current state of the relevant file or resource to confirm it still holds. When a memory conflicts with what you observe now, trust the observation and update or delete the stale memory rather than acting on it.',
 ];
 
 export const TRUSTING_RECALL_SECTION: readonly string[] = [
-  '## 依据记忆给出建议之前',
+  '## Before giving advice based on memory',
   '',
-  '提到具体函数、文件或开关的记忆，只断言它「在写入时存在」——它可能已被改名、删除或从未合入。给出建议前：',
+  'A memory that mentions a specific function, file, or flag only asserts that it existed when the memory was written — it may since have been renamed, deleted, or never merged. Before giving advice:',
   '',
-  '- 记忆提到文件路径：确认文件还在。',
-  '- 记忆提到函数或开关：grep 确认它还在。',
-  '- 用户正要按你的建议行动（而不只是问历史）：先验证再建议。',
+  '- If the memory names a file path, confirm the file still exists.',
+  '- If the memory names a function or flag, grep to confirm it still exists.',
+  '- If the user is about to act on your advice (not merely asking about history), verify before advising.',
   '',
-  '「记忆说 X 存在」不等于「X 现在存在」。概括仓库状态的记忆（活动日志、架构快照）冻结在写入那一刻；用户问最近或当前状态时，用 `git log` 或读代码，而不是凭快照回答。',
+  '"The memory says X exists" is not "X exists now". Memories that summarize repository state (activity logs, architecture snapshots) are frozen at the moment they were written; when the user asks about recent or current state, use `git log` or read the code rather than answering from the snapshot.',
 ];
 
 export const MEMORY_FRONTMATTER_EXAMPLE: readonly string[] = [
   '```markdown',
   '---',
-  'name: {{记忆名称}}',
-  'description: {{一行简介——未来靠它判断相关性，写具体}}',
+  'name: {{memory name}}',
+  'description: {{one-line summary — this is what future recall uses to judge relevance, so be specific}}',
   `type: {{${MEMORY_TYPES.join(', ')}}}`,
   '---',
   '',
-  '{{记忆正文——feedback / project 类型的结构：先写规则或事实，再写 **Why:** 与 **How to apply:** 两行}}',
+  '{{memory body — for feedback / project types the structure is: the rule or fact first, then the **Why:** and **How to apply:** lines}}',
   '```',
 ];

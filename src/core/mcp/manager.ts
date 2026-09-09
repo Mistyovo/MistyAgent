@@ -67,7 +67,7 @@ export class McpManager {
     return Object.keys(this.configs).map((name) => {
       const entry = this.entries.get(name);
       if (entry === undefined) {
-        return { name, state: 'failed', toolCount: 0, error: '尚未连接' };
+        return { name, state: 'failed', toolCount: 0, error: 'Not connected yet' };
       }
       if (entry.error !== undefined) {
         return { name, state: 'failed', toolCount: 0, error: entry.error };

@@ -97,7 +97,7 @@ describe('searchDuckDuckGo', () => {
       res.writeHead(200, { 'content-type': 'text/html' });
       res.end('<html><body>totally unexpected</body></html>');
     };
-    await expect(searchDuckDuckGo('x', { baseUrl })).rejects.toThrow('未从响应中解析到搜索结果');
+    await expect(searchDuckDuckGo('x', { baseUrl })).rejects.toThrow('Could not parse any search results');
   });
 
   it('无结果页面返回空数组', async () => {

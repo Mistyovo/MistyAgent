@@ -36,8 +36,8 @@ export function formatTokenCount(count: number): string {
 }
 
 /**
- * 底部状态行（对齐 Claude Code / Kimi Code 的极简单行风格，无反色底）：
- * 左簇 basename · model · 权限模式，右簇 busy / 后台任务 / 上下文用量 /
+ * 底部状态行（极简单行风格，`~` 分隔是 Misty 的标志元素，无反色底）：
+ * 左簇 basename ~ model ~ 权限模式，右簇 busy / 后台任务 / 上下文用量 /
  * token 用量 / 退出提示，中间空格填充。
  * 整行固定 列数-1 宽：满宽写在老式 conhost 会物理折行，与 ink 的行高预算错位，
  * eraseLines 逐帧少擦导致残帧。填充宽度必须自己按终端模式量
@@ -83,9 +83,9 @@ export const StatusBar = memo(function StatusBar({
   const tailWidth = measureTerminalWidth(tail, widthMode);
   // basename 超宽时截断（保留 ' · ' 分隔），余量由中间填充吸收
   const budget =
-    barWidth - measureTerminalWidth(` · ${model} · ${modeText}`, widthMode) - tailWidth;
+    barWidth - measureTerminalWidth(` ~ ${model} ~ ${modeText}`, widthMode) - tailWidth;
   const basenameShown = truncateTerminalText(basename, Math.max(0, budget), widthMode);
-  const lead = basenameShown === '' ? `${model} · ` : `${basenameShown} · ${model} · `;
+  const lead = basenameShown === '' ? `${model} ~ ` : `${basenameShown} ~ ${model} ~ `;
   const fillWidth = Math.max(
     1,
     barWidth - measureTerminalWidth(`${lead}${modeText}`, widthMode) - tailWidth,

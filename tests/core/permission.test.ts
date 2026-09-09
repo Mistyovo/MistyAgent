@@ -156,7 +156,7 @@ describe('evaluatePermission', () => {
       { command: 'rm -rf x' },
       makeCtx({ rules: [{ action: 'deny', tool: 'Bash', pattern: 'rm *' }] }),
     );
-    expect(decision).toEqual({ kind: 'deny', reason: '被 deny 规则 Bash(rm *) 拒绝' });
+    expect(decision).toEqual({ kind: 'deny', reason: 'Denied by deny rule Bash(rm *)' });
   });
 
   it('1. deny 优先级最高：bypassPermissions 也不能越过', () => {
@@ -185,7 +185,7 @@ describe('evaluatePermission', () => {
       makeCtx({ mode: 'plan' }),
     );
     expect(decision.kind).toBe('deny');
-    expect(decision.kind === 'deny' && decision.reason).toContain('plan');
+    expect(decision.kind === 'deny' && decision.reason).toContain('Plan');
   });
 
   it('2. plan 模式放行只读工具', () => {
@@ -208,7 +208,7 @@ describe('evaluatePermission', () => {
       { command: 'sudo apt update' },
       makeCtx({ rules: [{ action: 'ask', tool: 'Bash', pattern: 'sudo *' }] }),
     );
-    expect(decision).toEqual({ kind: 'ask', reason: '规则 Bash(sudo *) 要求用户确认' });
+    expect(decision).toEqual({ kind: 'ask', reason: 'Rule Bash(sudo *) requires user confirmation' });
   });
 
   it('5. acceptEdits 放行文件写，bash 仍落到兜底 ask', () => {

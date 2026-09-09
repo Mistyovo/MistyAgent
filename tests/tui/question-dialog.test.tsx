@@ -39,7 +39,7 @@ describe('QuestionDialog', () => {
     expect(frame).toContain('1. 甲 — 保守路线');
     expect(frame).toContain('2. 乙');
     expect(frame).toContain('3. 丙');
-    expect(frame).toContain('1-4 select');
+    expect(frame).toContain('1-4 choose');
     expect(frame).toContain('esc skip');
   });
 

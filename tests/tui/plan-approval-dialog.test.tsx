@@ -37,12 +37,12 @@ describe('PlanApprovalDialog', () => {
   it('渲染：标题、计划全文、选项与提示上屏', () => {
     const { lastFrame } = mountDialog(makeRequest('# 实施计划\n1. 先做甲\n2. 再做乙'));
     const frame = lastFrame()!;
-    expect(frame).toContain('Would you like to proceed?');
+    expect(frame).toContain('Approve this plan?');
     expect(frame).toContain('# 实施计划');
     expect(frame).toContain('1. 先做甲');
     expect(frame).toContain('2. 再做乙');
-    expect(frame).toContain('1. Yes, approve and execute');
-    expect(frame).toContain('2. No, keep planning');
+    expect(frame).toContain('1. Approve and execute');
+    expect(frame).toContain('2. Reject, keep planning');
     expect(frame).toContain('esc reject');
   });
 
@@ -76,7 +76,7 @@ describe('PlanApprovalDialog', () => {
     const { stdin, lastFrame, replies } = mountDialog(makeRequest('# 计划'));
     stdin.write('\x1b[C'); // →
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('❯ 2. No, keep planning');
+      expect(lastFrame()).toContain('❯ 2. Reject, keep planning');
     });
     stdin.write('\r');
     await vi.waitFor(() => {
@@ -88,7 +88,7 @@ describe('PlanApprovalDialog', () => {
     const { stdin, lastFrame } = mountDialog(makeRequest('# 计划'));
     stdin.write('\x1b[D'); // ←
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('❯ 2. No, keep planning');
+      expect(lastFrame()).toContain('❯ 2. Reject, keep planning');
     });
   });
 

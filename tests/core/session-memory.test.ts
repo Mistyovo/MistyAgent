@@ -25,7 +25,7 @@ function recallRequests(provider: FakeProvider): RecordedRequest[] {
 
 /** 提取子代理调用的特征：systemPrompt 由 memory/extract.ts 组装 */
 function extractionRequests(provider: FakeProvider): RecordedRequest[] {
-  return provider.requests.filter((r) => r.systemPrompt.includes('记忆提取子代理'));
+  return provider.requests.filter((r) => r.systemPrompt.includes('memory extraction subagent'));
 }
 
 /** 主循环调用：systemPrompt 即 Session 配置的 'system' */

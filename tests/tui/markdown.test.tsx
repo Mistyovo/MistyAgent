@@ -276,7 +276,7 @@ describe('Markdown 组件 ANSI 输出', () => {
       );
       expect(output).not.toContain('38;2;');
       expect(output).not.toContain('48;2;');
-      expect(output).toContain('\x1b[33m'); // heading = yellow
+      expect(output).toContain('\x1b[34m'); // heading = blue
       expect(output).toContain('\x1b[40m'); // codeBlockBg = black
       expect(output).toContain('标题');
     });
@@ -380,7 +380,7 @@ describe('ApprovalDialog：diff 着色与键位提示', () => {
       const output = renderToString(
         <ApprovalDialog request={editRequest} cwd={process.cwd()} onReply={() => {}} />,
       );
-      expect(output).toContain('esc reject');
+      expect(output).toContain('esc deny');
     });
   });
 

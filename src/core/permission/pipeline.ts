@@ -101,7 +101,7 @@ function sensitivePathDenial(
   if (!check.sensitive) {
     return undefined;
   }
-  return { kind: 'deny', reason: `受保护路径：${inputPath}（${check.reason ?? '敏感文件'}）` };
+  return { kind: 'deny', reason: `Protected path: ${inputPath} (${check.reason ?? 'sensitive file'})` };
 }
 
 /**
@@ -126,7 +126,7 @@ export function evaluatePermission(
 ): PermissionDecision {
   const denyRule = findMatchingRule(ctx.rules, 'deny', tool.name, input, ctx.cwd);
   if (denyRule !== undefined) {
-    return { kind: 'deny', reason: `被 deny 规则 ${describeRule(denyRule)} 拒绝` };
+    return { kind: 'deny', reason: `Denied by deny rule ${describeRule(denyRule)}` };
   }
   const sensitiveDeny = sensitivePathDenial(tool, input, ctx.cwd);
   if (sensitiveDeny !== undefined) {
@@ -137,14 +137,14 @@ export function evaluatePermission(
   }
   const readOnly = tool.accesses(input).every((access) => access.kind === 'read');
   if (ctx.mode === 'plan' && !readOnly) {
-    return { kind: 'deny', reason: `plan 模式为只读：已拒绝 ${tool.name} 的写/执行操作` };
+    return { kind: 'deny', reason: `Plan mode is read-only: denied ${tool.name} write/execute` };
   }
   if (ctx.mode === 'bypassPermissions') {
     return ALLOW;
   }
   const askRule = findMatchingRule(ctx.rules, 'ask', tool.name, input, ctx.cwd);
   if (askRule !== undefined) {
-    return { kind: 'ask', reason: `规则 ${describeRule(askRule)} 要求用户确认` };
+    return { kind: 'ask', reason: `Rule ${describeRule(askRule)} requires user confirmation` };
   }
   if (ctx.mode === 'acceptEdits' && isFileEditAccess(tool, input)) {
     return ALLOW;
@@ -161,5 +161,5 @@ export function evaluatePermission(
   if (tool.isReadOnly(input)) {
     return ALLOW;
   }
-  return { kind: 'ask', reason: `${tool.name} 需要用户确认后才能执行` };
+  return { kind: 'ask', reason: `${tool.name} requires user confirmation before execution` };
 }

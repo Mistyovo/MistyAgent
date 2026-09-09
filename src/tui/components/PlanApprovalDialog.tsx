@@ -37,15 +37,14 @@ export function truncatePlanLines(plan: string, maxLines: number): string {
 }
 
 /**
- * 计划批准弹窗（对齐 Claude Code 的 "Would you like to proceed?" 样式）：
- * 显示 exit_plan_mode 提交的计划全文（超长截断），数字键 1/2 直接选择，
- * ←/→ 移动高亮，Enter 确认，Esc 拒绝（v1 不收反馈文本）。
+ * 计划批准弹窗：显示 exit_plan_mode 提交的计划全文（超长截断），数字键 1/2
+ * 直接选择，←/→ 移动高亮，Enter 确认，Esc 拒绝（v1 不收反馈文本）。
  * 布局与宽度约束见 DialogFrame。
  */
 export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps) {
   const options: Option[] = [
-    { approved: true, label: 'Yes, approve and execute' },
-    { approved: false, label: 'No, keep planning (esc)' },
+    { approved: true, label: 'Approve and execute' },
+    { approved: false, label: 'Reject, keep planning (esc)' },
   ];
   const [selection, setSelection] = useState(0);
   const { stdout } = useStdout();
@@ -84,7 +83,7 @@ export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps
   const plan = truncatePlanLines(request.plan, planLineBudget(rows));
   const theme = getTheme();
   return (
-    <DialogFrame title="Would you like to proceed?" color={theme.permissionMode.plan}>
+    <DialogFrame title="Approve this plan?" color={theme.permissionMode.plan}>
       <Text>{wrap(plan, 3)}</Text>
       {options.map((option, index) => (
         <DialogOption
@@ -94,7 +93,7 @@ export function PlanApprovalDialog({ request, onReply }: PlanApprovalDialogProps
           label={option.label}
         />
       ))}
-      <Text dimColor>{wrap('←/→ move · 1/2 select · enter confirm · esc reject', 3)}</Text>
+      <Text dimColor>{wrap('1/2 choose · ←→ move · enter ok · esc reject', 3)}</Text>
     </DialogFrame>
   );
 }

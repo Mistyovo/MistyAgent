@@ -35,7 +35,7 @@ describe('read', () => {
     expect(full.output).toBe('1\tone\n2\ttwo\n3\tthree\n4\t');
 
     const slice = await readTool.call({ path: 'a.txt', offset: 2, limit: 1 }, ctx);
-    expect(slice.output).toBe('2\ttwo\n[已截断：共 4 行，显示到第 2 行]');
+    expect(slice.output).toBe('2\ttwo\n[Truncated: 4 lines total, shown through line 2]');
   });
 
   it('文件不存在与目录都返回 isError', async () => {
@@ -47,7 +47,7 @@ describe('read', () => {
     await writeFile(path.join(cwd, 'bin'), Buffer.from([0x00, 0x01]));
     const result = await readTool.call({ path: 'bin' }, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('二进制');
+    expect(result.output).toContain('binary content');
   });
 
   it('isReadOnly 为 true', () => {
@@ -80,7 +80,7 @@ describe('edit', () => {
     await readTool.call({ path: 'e.txt' }, ctx);
     const dup = await editTool.call({ path: 'e.txt', old_string: 'foo', new_string: 'x' }, ctx);
     expect(dup.isError).toBe(true);
-    expect(dup.output).toContain('2 次');
+    expect(dup.output).toContain('2 times');
 
     const all = await editTool.call(
       { path: 'e.txt', old_string: 'foo', new_string: 'x', replace_all: true },
@@ -117,7 +117,7 @@ describe('bash', () => {
       ctx,
     );
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('超时');
+    expect(result.output).toContain('timed out');
   });
 });
 
@@ -186,7 +186,7 @@ describe('registry', () => {
     for (const definition of registry.definitions()) {
       expect(definition.parameters).toMatchObject({ type: 'object' });
     }
-    expect(() => registry.register(readTool)).toThrow('重复注册');
+    expect(() => registry.register(readTool)).toThrow('Duplicate tool registration');
   });
 
   it('提供 provider + getModel 宿主能力时额外注册 agent 工具', () => {

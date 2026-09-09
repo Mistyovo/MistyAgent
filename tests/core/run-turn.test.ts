@@ -228,7 +228,7 @@ describe('runTurn', () => {
     expect(roles).toEqual(['user', 'assistant', 'tool', 'assistant', 'tool', 'user', 'assistant']);
     const hint = deps.messages[5]!;
     expect(hint.role).toBe('user');
-    expect((hint as { content: string }).content).toContain('最大步数');
+    expect((hint as { content: string }).content).toContain('maximum step limit');
     expect((deps.messages[6] as AssistantMessage).content).toBe('总结收尾');
   });
 
@@ -275,7 +275,7 @@ describe('runTurn', () => {
     expect(result.stopReason).toBe('completed');
     const toolMessages = deps.messages.filter((m) => m.role === 'tool') as ToolMessage[];
     expect(toolMessages).toHaveLength(2);
-    expect(toolMessages[0]!.content).toContain('未知工具');
+    expect(toolMessages[0]!.content).toContain('Unknown tool');
     expect(toolMessages[0]!.isError).toBe(true);
     expect(toolMessages[1]!.content).toContain('JSON');
     expect(toolMessages[1]!.isError).toBe(true);

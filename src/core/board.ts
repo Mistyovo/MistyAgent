@@ -63,13 +63,13 @@ export class TaskBoard {
     const section = (title: string, kind: BoardEntryKind): string[] => {
       const lines = this.items
         .filter((entry) => entry.kind === kind)
-        .map((entry) => `- ${entry.text}（${entry.source}）`);
-      return [title, ...(lines.length > 0 ? lines : ['（暂无）'])];
+        .map((entry) => `- ${entry.text} (${entry.source})`);
+      return [title, ...(lines.length > 0 ? lines : ['(none yet)'])];
     };
     return [
-      ...section('已确认的事实：', 'fact'),
+      ...section('Confirmed facts:', 'fact'),
       '',
-      ...section('已排除的方向（不要重复尝试）：', 'deadend'),
+      ...section('Ruled-out directions (do not retry):', 'deadend'),
     ].join('\n');
   }
 

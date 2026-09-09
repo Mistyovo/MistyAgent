@@ -116,11 +116,11 @@ export class HookRunner {
         continue;
       }
       if (proc.spawnError !== undefined && proc.spawnError !== null) {
-        result.warnings.push(`hook 命令启动失败（${entry.command}）：${proc.spawnError}`);
+        result.warnings.push(`Hook command failed to start (${entry.command}): ${proc.spawnError}`);
         continue;
       }
       if (proc.timedOut === true) {
-        result.warnings.push(`hook 命令超时（>${this.timeoutMs}ms）已终止：${entry.command}`);
+        result.warnings.push(`Hook command timed out (>${this.timeoutMs}ms) and was terminated: ${entry.command}`);
         continue;
       }
       const stdout = proc.stdout.trim();
@@ -139,13 +139,13 @@ export class HookRunner {
               ? stderr
               : stdout !== ''
                 ? stdout
-                : `hook 命令以非零退出码 ${String(proc.code ?? '信号终止')} 结束：${entry.command}`;
+                : `Hook command exited with non-zero code ${String(proc.code ?? 'terminated by signal')}: ${entry.command}`;
           continue;
         }
       } else if (proc.code !== 0) {
         result.warnings.push(
-          `hook 命令以非零退出码 ${String(proc.code ?? '信号终止')} 结束：${entry.command}` +
-            (stderr !== '' ? `（${stderr}）` : ''),
+          `Hook command exited with non-zero code ${String(proc.code ?? 'terminated by signal')}: ${entry.command}` +
+            (stderr !== '' ? ` (${stderr})` : ''),
         );
       }
       if (stdout !== '') {
@@ -280,7 +280,7 @@ function parseDenyReason(stdout: string): string | null {
     return null;
   }
   const reason = (parsed as { reason?: unknown }).reason;
-  return typeof reason === 'string' && reason.trim() !== '' ? reason : 'hook 拒绝了本次操作';
+  return typeof reason === 'string' && reason.trim() !== '' ? reason : 'Hook denied this operation';
 }
 
 /** 把 hook 运行结果转成 notice 事件上屏（warnings + stdout 提示）；deny 不产生事件 */

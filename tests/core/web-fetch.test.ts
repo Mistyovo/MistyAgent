@@ -104,7 +104,7 @@ describe('web_fetch', () => {
     };
     const result = await webFetchTool.call({ url: `${baseUrl}/long` }, ctx);
     expect(result.isError).toBeUndefined();
-    expect(result.output).toContain('已截断');
+    expect(result.output).toContain('truncated');
     expect(result.output.length).toBeLessThan(31_000);
   });
 
@@ -125,7 +125,7 @@ describe('web_fetch', () => {
     };
     const result = await webFetchTool.call({ url: `${baseUrl}/img` }, ctx);
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('不支持的内容类型');
+    expect(result.output).toContain('Unsupported content type');
   });
 
   it('非法与非 http(s) URL 返回 isError', async () => {
@@ -166,7 +166,7 @@ describe('web_fetch', () => {
     setTimeout(() => controller.abort(), 50);
     const result = await pending;
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('中断');
+    expect(result.output).toContain('Fetch interrupted');
   });
 
   it('describeCall 展示域名+路径并截断', () => {

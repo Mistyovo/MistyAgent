@@ -51,7 +51,9 @@ export interface RunTurnResult {
   usage: TokenUsage;
 }
 
-const DEFAULT_MAX_STEPS = 50;
+/** 每 turn 步数上限：默认取到 16 位上限即事实上的「无限制」，仅保留强制收尾的安全阀
+ *  （防呆兜底：step 计数溢出前 doom-loop / stall-guard / 压缩机制早已介入） */
+const DEFAULT_MAX_STEPS = 65_536;
 /** context-overflow 后的「压缩 + 重试本步」次数上限，防连续溢出死循环 */
 const MAX_OVERFLOW_RETRIES = 2;
 /** 输出 token 上限初值（对齐 Claude Code 的 8k 起点） */
@@ -185,8 +187,8 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       pushMessage({
         role: 'user',
         content:
-          `已达到最大步数限制（${maxSteps} 步）。请停止调用工具，` +
-          '直接总结目前的进展与结论作为收尾。',
+          `The maximum step limit (${maxSteps} steps) has been reached. Stop calling tools and ` +
+          'summarize the progress and conclusions so far as your final answer.',
       });
       finalStepForced = true;
     }
@@ -227,7 +229,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
         }
         deps.dispatchEvent({
           type: 'error',
-          message: '上下文超出模型限制，压缩重试后仍失败',
+          message: 'Context exceeded the model limit and still failed after compaction retries',
           recoverable: false,
         });
         return finish('error');
@@ -241,7 +243,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
             type: 'model-fallback',
             from: stepModel,
             to: nextModel,
-            reason: outcome.errorMessage ?? '模型请求失败',
+            reason: outcome.errorMessage ?? 'model request failed',
           });
           continue;
         }
@@ -264,7 +266,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
       }
       deps.dispatchEvent({
         type: 'error',
-        message: `输出被 max_tokens 截断：已自动升级到封顶 ${MAX_TOKENS_CAP} 仍未完成`,
+        message: `Output was truncated by max_tokens: escalated to the cap of ${MAX_TOKENS_CAP} and still did not finish`,
         recoverable: false,
       });
       return finish('error');
@@ -297,7 +299,7 @@ export async function runTurn(deps: RunTurnDeps): Promise<RunTurnResult> {
     const observeDoomLoop: EventDispatcher = (event) => {
       if (
         event.type === 'approval-requested' &&
-        event.request.reason.startsWith('检测到重复调用循环')
+        event.request.reason.startsWith('Repeated identical tool call detected')
       ) {
         doomLoopIntervened = true;
       }

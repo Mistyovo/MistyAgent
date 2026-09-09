@@ -6,8 +6,11 @@ import { defineTool, type Tool } from '../tool';
 import { errorResult } from './fs-utils';
 
 const inputSchema = z.object({
-  name: z.string().describe('要调用的技能名'),
-  args: z.string().optional().describe('传给技能的参数，替换正文中的 $ARGUMENTS 占位符'),
+  name: z.string().describe('Name of the skill to invoke'),
+  args: z
+    .string()
+    .optional()
+    .describe('Arguments passed to the skill, substituted for the $ARGUMENTS placeholder'),
 });
 
 /**
@@ -21,9 +24,9 @@ export function createSkillTool(skills: readonly SkillDefinition[]): Tool {
   return defineTool({
     name: 'skill',
     description:
-      '调用一个技能：把该技能的正文作为指令注入当前会话，立即照其执行（正文可能要求继续调用其他工具）。' +
-      '用户意图命中某技能时优先走本工具，不要绕开它手工实现。可用技能：\n' +
-      skills.map((skill) => `- ${skill.name}：${skill.description}`).join('\n'),
+      'Invoke a skill: injects the skill body into the current session as instructions and you follow them immediately (the body may call for further tool calls). ' +
+      'When the user intent matches a skill, go through this tool rather than reimplementing it by hand. Available skills:\n' +
+      skills.map((skill) => `- ${skill.name}: ${skill.description}`).join('\n'),
     inputSchema,
     isReadOnly: () => true,
     accesses: () => [{ kind: 'read' }],
@@ -31,7 +34,9 @@ export function createSkillTool(skills: readonly SkillDefinition[]): Tool {
     call: async (input) => {
       const skill = byName.get(input.name);
       if (skill === undefined) {
-        return errorResult(`未知技能：${input.name}。可用技能：${names.join('、')}`);
+        return errorResult(
+          `Unknown skill: ${input.name}. Available skills: ${names.join(', ')}`,
+        );
       }
       return { output: skill.body.replaceAll('$ARGUMENTS', input.args ?? '') };
     },

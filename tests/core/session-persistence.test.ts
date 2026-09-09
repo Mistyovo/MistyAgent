@@ -109,7 +109,7 @@ describe('Session 持久化', () => {
     expect(compacted).toBeDefined();
     expect(session.getMessages()[0]).toEqual({
       role: 'user',
-      content: '[历史对话摘要]\n摘要内容',
+      content: '[Conversation history summary]\n摘要内容',
     });
     // 摘要消息也落盘，且先于它写入 compact-checkpoint
     const sessionId = session.getSessionId()!;
@@ -179,7 +179,7 @@ describe('Session 持久化', () => {
 
     const filePath = join(dir, `${session.getSessionId()!}.jsonl`);
     const resumed = resumeSession(filePath);
-    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要内容' });
+    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要内容' });
     // checkpoint 之前的 user('hello') 被丢弃，之后只有摘要与新 assistant
     expect(resumed.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
   });
@@ -201,7 +201,7 @@ describe('Session 持久化', () => {
     await session.submit({ type: 'user-turn', text: 'hello' });
     // 第一次压缩后历史为 摘要+保留尾部+回答一（>keepRecent），可再次手动压缩
     expect(await session.compactNow()).toBe(true);
-    expect(session.getMessages()[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要二' });
+    expect(session.getMessages()[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要二' });
 
     const filePath = join(dir, `${session.getSessionId()!}.jsonl`);
     const checkpoints = loadTranscript(filePath).filter(
@@ -212,6 +212,6 @@ describe('Session 持久化', () => {
     expect(checkpoints).toHaveLength(2);
 
     const resumed = resumeSession(filePath);
-    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要二' });
+    expect(resumed.messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要二' });
   });
 });

@@ -51,9 +51,9 @@ export class StallGuard {
     }
     this.steered = true;
     return (
-      `连续 ${this.barrenStreak} 步没有获得任何新信息（均为重复读取已见内容）。` +
-      '请停止重复读取：基于已经掌握的信息直接行动或给出结论；' +
-      '若确实卡住，向用户说明卡点与需要的信息。'
+      `${this.barrenStreak} consecutive steps produced no new information (every call re-read content already seen). ` +
+      'Stop re-reading: act on what you already know, or give a conclusion. ' +
+      'If you are genuinely stuck, tell the user where you are stuck and what you need.'
     );
   }
 }

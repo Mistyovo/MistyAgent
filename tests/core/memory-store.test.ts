@@ -67,10 +67,10 @@ describe('truncateIndexContent', () => {
     expect(result.wasTruncated).toBe(true);
     expect(result.content).toContain('- [m0](m0.md)');
     expect(result.content).not.toContain(`- [m${MAX_INDEX_LINES}](m${MAX_INDEX_LINES}.md)`);
-    expect(result.content).toContain('警告');
+    expect(result.content).toContain('Warning');
     expect(result.content).toContain(`${MAX_INDEX_LINES}`);
-    expect(result.content).toContain('行');
-    expect(result.content).toContain('细节挪进主题文件');
+    expect(result.content).toContain('lines');
+    expect(result.content).toContain('move detail into the topic files');
   });
 
   it('超体积上限：按换行边界截断并附体积警告', () => {
@@ -79,8 +79,8 @@ describe('truncateIndexContent', () => {
     expect(raw.length).toBeGreaterThan(MAX_INDEX_BYTES);
     const result = truncateIndexContent(raw);
     expect(result.wasTruncated).toBe(true);
-    expect(result.content).toContain('警告');
-    expect(result.content).toContain('体积');
+    expect(result.content).toContain('Warning');
+    expect(result.content).toContain('characters');
     expect(result.content).toContain(`${MAX_INDEX_BYTES}`);
   });
 });
@@ -150,19 +150,19 @@ describe('buildMemorySystemPromptSection', () => {
     const fresh = path.join(dir, 'fresh-memory');
     const section = buildMemorySystemPromptSection(fresh);
     expect(section).toContain(fresh);
-    expect(section).toContain('记忆类型');
-    expect(section).toContain('不要存什么');
-    expect(section).toContain('如何保存记忆');
-    expect(section).toContain('何时读取记忆');
-    expect(section).toContain('依据记忆给出建议之前');
-    expect(section).not.toContain('当前记忆索引');
+    expect(section).toContain('Memory types');
+    expect(section).toContain('What not to save');
+    expect(section).toContain('How to save a memory');
+    expect(section).toContain('When to read memory');
+    expect(section).toContain('Before giving advice based on memory');
+    expect(section).not.toContain('Current memory index');
     expect(scanMemoryFiles(fresh)).toEqual([]);
   });
 
   it('有索引时末尾附当前记忆索引及内容', async () => {
     await writeFile(path.join(dir, 'MEMORY.md'), '- [a](a.md) — 一条记忆\n', 'utf8');
     const section = buildMemorySystemPromptSection(dir);
-    expect(section).toContain('当前记忆索引');
+    expect(section).toContain('Current memory index');
     expect(section).toContain('- [a](a.md) — 一条记忆');
   });
 });

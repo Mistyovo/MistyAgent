@@ -8,9 +8,9 @@ export interface SensitivePathResult {
 }
 
 const SENSITIVE_DIR_REASONS: Record<string, string> = {
-  '.git': 'Git 版本库目录 .git/',
-  '.ssh': 'SSH 配置目录 .ssh/',
-  '.gnupg': 'GnuPG 密钥目录 .gnupg/',
+  '.git': 'Git repository directory .git/',
+  '.ssh': 'SSH config directory .ssh/',
+  '.gnupg': 'GnuPG key directory .gnupg/',
 };
 
 /** .env 与 .env.<suffix>；config.env / foo.env 不算 */
@@ -41,19 +41,19 @@ export function checkSensitivePath(absPath: string): SensitivePathResult {
     }
   }
   if (segments.includes('.aws') && basename === 'credentials') {
-    return { sensitive: true, reason: 'AWS 凭证文件 .aws/credentials' };
+    return { sensitive: true, reason: 'AWS credentials file .aws/credentials' };
   }
   if (isInside(path.join(homedir(), '.misty', 'projects'), normalized)) {
-    return { sensitive: true, reason: 'Misty 会话数据目录 ~/.misty/projects/' };
+    return { sensitive: true, reason: 'Misty session data directory ~/.misty/projects/' };
   }
   if (ENV_BASENAME.test(basename)) {
-    return { sensitive: true, reason: '密钥文件 .env*' };
+    return { sensitive: true, reason: 'Secrets file .env*' };
   }
   if (basename.endsWith('.pem')) {
-    return { sensitive: true, reason: '证书/私钥文件 *.pem' };
+    return { sensitive: true, reason: 'Certificate/private key file *.pem' };
   }
   if (basename.startsWith('id_rsa') || basename.startsWith('id_ed25519')) {
-    return { sensitive: true, reason: 'SSH 私钥文件 id_rsa*/id_ed25519*' };
+    return { sensitive: true, reason: 'SSH private key file id_rsa*/id_ed25519*' };
   }
   return { sensitive: false };
 }

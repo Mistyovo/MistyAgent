@@ -21,33 +21,33 @@ import {
 export function buildMemorySystemPromptSection(dir = getMemoryDir()): string {
   ensureMemoryDir(dir);
   const lines: string[] = [
-    '# 记忆系统',
+    '# Memory system',
     '',
-    `你有一个持久的文件记忆系统，目录：\`${dir}\`。该目录已存在——直接用 write 工具写入，不要 mkdir 或检查它是否存在。`,
+    `You have a persistent file-based memory system at \`${dir}\`. That directory already exists — write to it directly with the write tool; do not mkdir or check whether it exists.`,
     '',
-    '随时间积累记忆，让未来的对话能完整了解：用户是谁、希望如何协作、哪些做法要避免或延续、工作背后的背景。',
+    'Accumulate memories over time so that future conversations fully understand: who the user is, how they want to collaborate, which practices to avoid or continue, and the context behind the work.',
     '',
-    '用户明确要求记住某事时，立即保存为最合适的类型；要求忘记时，找到并删除对应条目（主题文件与索引行）。',
+    'When the user explicitly asks you to remember something, save it immediately as the most suitable type; when they ask you to forget something, find and delete the corresponding entry (both the topic file and the index line).',
     '',
     ...TYPES_SECTION,
     '',
     ...WHAT_NOT_TO_SAVE_SECTION,
     '',
-    '## 如何保存记忆',
+    '## How to save a memory',
     '',
-    '保存分两步：',
+    'Saving takes two steps:',
     '',
-    '**第一步**——把记忆写进独立文件（如 `user_role.md`、`feedback_testing.md`），frontmatter 格式：',
+    '**Step one** — write the memory into its own file (e.g. `user_role.md`, `feedback_testing.md`) with this frontmatter format:',
     '',
     ...MEMORY_FRONTMATTER_EXAMPLE,
     '',
-    `**第二步**——在 \`${MEMORY_INDEX_FILENAME}\` 里加一行指针。${MEMORY_INDEX_FILENAME} 是索引不是记忆——每条一行（约 150 字符以内）：\`- [标题](file.md) — 一句话钩子\`。它没有 frontmatter。永远不要把记忆正文直接写进 ${MEMORY_INDEX_FILENAME}。`,
+    `**Step two** — add a one-line pointer to \`${MEMORY_INDEX_FILENAME}\`. ${MEMORY_INDEX_FILENAME} is an index, not a memory — one line per entry (about 150 characters or less): \`- [Title](file.md) — one-line hook\`. It has no frontmatter. Never write memory content directly into ${MEMORY_INDEX_FILENAME}.`,
     '',
-    `- ${MEMORY_INDEX_FILENAME} 会一直加载在你的上下文里——超过 ${MAX_INDEX_LINES} 行会被截断，保持索引精简`,
-    '- 记忆文件的 name / description / type 与正文保持同步',
-    '- 按主题而不是时间组织记忆',
-    '- 写新记忆前先检查是否已有可更新的记忆，不要重复',
-    '- 发现记忆错误或过时，更新或删除它',
+    `- ${MEMORY_INDEX_FILENAME} is always loaded into your context — it is truncated past ${MAX_INDEX_LINES} lines, so keep the index lean`,
+    '- Keep the name / description / type of a memory file in sync with its body',
+    '- Organize memories by topic, not by time',
+    '- Before writing a new memory, check whether an existing one can be updated instead of duplicated',
+    '- When a memory turns out to be wrong or outdated, update or delete it',
     '',
     ...WHEN_TO_ACCESS_SECTION,
     '',
@@ -56,7 +56,7 @@ export function buildMemorySystemPromptSection(dir = getMemoryDir()): string {
 
   const index = readMemoryIndex(dir);
   if (index !== null && index.trim() !== '') {
-    lines.push('', '## 当前记忆索引', '', truncateIndexContent(index).content);
+    lines.push('', '## Current memory index', '', truncateIndexContent(index).content);
   }
   return lines.join('\n');
 }

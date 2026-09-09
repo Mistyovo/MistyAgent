@@ -105,7 +105,7 @@ describe('权限接线：loop 与 session', () => {
     expect(executed).toEqual([]);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('用户拒绝');
+    expect(toolMessage.content).toContain('The user rejected this operation');
     expect(toolMessage.content).toContain('太危险了');
     // 拒绝结果进入了下一步请求的历史
     expect(provider.requests[1]!.messages.map((m) => m.role)).toEqual([
@@ -155,7 +155,7 @@ describe('权限接线：loop 与 session', () => {
     expect(approvalRequests(events)).toHaveLength(0);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('plan');
+    expect(toolMessage.content).toContain('Plan mode is read-only');
     await expect(stat(path.join(dir, 'a.txt'))).rejects.toThrow();
   });
 
@@ -178,7 +178,7 @@ describe('权限接线：loop 与 session', () => {
     expect(approvalRequests(events)).toHaveLength(0);
     const toolMessage = session.getMessages()[2] as ToolMessage;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('deny 规则');
+    expect(toolMessage.content).toContain('Denied by deny rule');
   });
 
   it('中断时挂起的审批被清空，turn 以 interrupted 收尾', async () => {

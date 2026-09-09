@@ -37,16 +37,16 @@ export function truncateIndexContent(raw: string): IndexTruncation {
 
   const reason =
     wasByteTruncated && !wasLineTruncated
-      ? `体积达 ${trimmed.length} 字符（上限 ${MAX_INDEX_BYTES}）——索引条目过长`
+      ? `is ${trimmed.length} characters (limit ${MAX_INDEX_BYTES}) — an index entry is too long`
       : wasLineTruncated && !wasByteTruncated
-        ? `行数达 ${lines.length} 行（上限 ${MAX_INDEX_LINES}）`
-        : `行数达 ${lines.length} 行、体积达 ${trimmed.length} 字符`;
+        ? `is ${lines.length} lines (limit ${MAX_INDEX_LINES})`
+        : `is ${lines.length} lines and ${trimmed.length} characters`;
 
   return {
     content:
       truncated +
-      `\n\n> 警告：MEMORY.md ${reason}，只加载了部分内容。` +
-      '索引条目保持一行（约 200 字符以内），细节挪进主题文件。',
+      `\n\n> Warning: MEMORY.md ${reason}, so only part of it was loaded. ` +
+      'Keep index entries to one line (about 200 characters or less) and move detail into the topic files.',
     wasTruncated: true,
   };
 }

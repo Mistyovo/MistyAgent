@@ -160,7 +160,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('Permission needed: Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('Allow Bash echo ok-from-tool?');
     });
     stdin.write('1');
     await vi.waitFor(() => {
@@ -198,7 +198,7 @@ describe('App 交互（ink-testing-library）', () => {
     expect(lastFrame()).not.toContain('esc skip');
     // 回答经工具结果回喂进了消息历史
     const toolMessage = session.getMessages().find((m) => m.role === 'tool');
-    expect(toolMessage).toMatchObject({ name: 'ask_user', content: '用户选择了：React' });
+    expect(toolMessage).toMatchObject({ name: 'ask_user', content: 'User selected: React' });
   });
 
   it('提问弹窗：Esc 跳过，取消结果回喂模型', async () => {
@@ -227,7 +227,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     const toolMessage = session.getMessages().find((m) => m.role === 'tool');
     expect(toolMessage).toMatchObject({ name: 'ask_user', isError: true });
-    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('用户取消了提问');
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('The user cancelled the question');
   });
 
   it('todo 工具更新经事件流渲染到状态栏上方的任务列表', async () => {
@@ -284,24 +284,24 @@ describe('App 交互（ink-testing-library）', () => {
     stdin.write('\r');
     // enter_plan_mode 已把权限切到 plan：状态栏经 plan-mode-changed 事件同步
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('Would you like to proceed?');
+      expect(lastFrame()).toContain('Approve this plan?');
       expect(lastFrame()).toContain('# 实施计划');
-      expect(lastFrame()).toContain('1. Yes, approve and execute');
+      expect(lastFrame()).toContain('1. Approve and execute');
       expect(lastFrame()).toContain('⏸ plan mode');
     });
     stdin.write('1');
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('开始执行');
       // 弹窗已关闭，状态栏恢复进入前的 default
-      expect(lastFrame()).not.toContain('Would you like to proceed?');
+      expect(lastFrame()).not.toContain('Approve this plan?');
       expect(lastFrame()).toContain('? default');
     });
     expect(session.isPlanMode()).toBe(false);
     expect(session.getPermissionMode()).toBe('default');
     const toolMessages = session.getMessages().filter((m) => m.role === 'tool');
     expect(toolMessages.map((m) => m.content)).toEqual([
-      expect.stringContaining('已进入计划模式'),
-      expect.stringContaining('计划已获批准'),
+      expect.stringContaining('Entered plan mode'),
+      expect.stringContaining('The plan was approved'),
     ]);
   });
 
@@ -321,7 +321,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('Would you like to proceed?');
+      expect(lastFrame()).toContain('Approve this plan?');
     });
     stdin.write('2');
     await vi.waitFor(() => {
@@ -333,7 +333,7 @@ describe('App 交互（ink-testing-library）', () => {
       .getMessages()
       .find((m) => m.role === 'tool' && m.name === 'exit_plan_mode');
     expect(rejected).toMatchObject({ isError: true });
-    expect(rejected?.role === 'tool' && rejected.content).toContain('计划被拒绝');
+    expect(rejected?.role === 'tool' && rejected.content).toContain('The plan was rejected');
   });
 
   it('Shift+Tab 切到 plan 即进入完整计划模式，切走即退出', async () => {
@@ -409,7 +409,7 @@ describe('App 交互（ink-testing-library）', () => {
       <App session={session} registry={registry} model="primary-model" cwd={process.cwd()} />,
     );
 
-    expect(lastFrame()).toContain('primary-model · ? default');
+    expect(lastFrame()).toContain('primary-model ~ ? default');
     stdin.write('go');
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('go');
@@ -418,13 +418,13 @@ describe('App 交互（ink-testing-library）', () => {
     // fallback 后、备用模型响应到达前：状态栏是备用模型，Static 区有切换提示
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('switching to backup-model');
-      expect(lastFrame()).toContain('backup-model · ? default');
+      expect(lastFrame()).toContain('backup-model ~ ? default');
     });
     release();
     // fallback 仅当前 turn 生效：turn 结束后状态栏回到 session 主模型
     await vi.waitFor(() => {
       expect(lastFrame()).toContain('备用模型完成');
-      expect(lastFrame()).toContain('primary-model · ? default');
+      expect(lastFrame()).toContain('primary-model ~ ? default');
     });
     expect(session.getModel()).toBe('primary-model');
   });
@@ -492,7 +492,7 @@ describe('App 交互（ink-testing-library）', () => {
     });
     stdin.write('\r');
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain('Permission needed: Bash echo ok-from-tool');
+      expect(lastFrame()).toContain('Allow Bash echo ok-from-tool?');
     });
     // 弹窗期间其他全局键位仍禁用：Shift+Tab 不切权限模式
     stdin.write('\x1b[Z');
@@ -501,7 +501,7 @@ describe('App 交互（ink-testing-library）', () => {
     // 第一下 Ctrl+C：弹窗按拒绝关闭、turn 中断、进入退出预位
     stdin.write('\x03');
     await vi.waitFor(() => {
-      expect(lastFrame()).not.toContain('Permission needed: Bash echo ok-from-tool');
+      expect(lastFrame()).not.toContain('Allow Bash echo ok-from-tool?');
       expect(lastFrame()).toContain('Interrupted by user');
       expect(lastFrame()).toContain('ctrl+c again to exit');
     });

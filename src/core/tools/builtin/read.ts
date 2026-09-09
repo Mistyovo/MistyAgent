@@ -16,9 +16,14 @@ const MAX_LINE_LENGTH = 2000;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const inputSchema = z.object({
-  path: z.string().describe('文件路径，相对 cwd 或绝对路径'),
-  offset: z.number().int().min(1).optional().describe('起始行号（1 起），默认 1'),
-  limit: z.number().int().min(1).optional().describe(`最多读取的行数，默认 ${MAX_LINES}`),
+  path: z.string().describe('File path, relative to cwd or absolute'),
+  offset: z.number().int().min(1).optional().describe('First line to read (1-based), default 1'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(`Maximum number of lines to read, default ${MAX_LINES}`),
 });
 
 function formatBody(lines: string[], offset: number): string {
@@ -64,10 +69,10 @@ async function readLineRange(
 export const readTool = defineTool({
   name: 'read',
   description:
-    '读取文本文件内容，输出带行号（<行号>\\t<内容>），行号可直接用于后续 edit 定位与结论引用。' +
-    `默认最多 ${MAX_LINES} 行，超长行在 ${MAX_LINE_LENGTH} 字符处截断；` +
-    `大文件（超过 ${MAX_FILE_SIZE / 1024 / 1024}MB）用 offset/limit 分段读取，读满一屏后按提示继续。` +
-    '二进制文件与目录不可读。',
+    'Read a text file, returning line-numbered output (<line>\\t<content>); those line numbers feed directly into a later edit and into citations in your conclusion. ' +
+    `Reads at most ${MAX_LINES} lines by default and truncates over-long lines at ${MAX_LINE_LENGTH} characters. ` +
+    `For large files (over ${MAX_FILE_SIZE / 1024 / 1024}MB) use offset/limit to read in segments, continuing where the output says it stopped. ` +
+    'Binary files and directories cannot be read.',
   inputSchema,
   isReadOnly: () => true,
   accesses: () => [{ kind: 'read' }],
@@ -77,47 +82,50 @@ export const readTool = defineTool({
     const shown = displayPath(ctx.cwd, absolute);
     const stats = await statKind(absolute);
     if (stats.missing) {
-      return errorResult(`文件不存在：${shown}`);
+      return errorResult(`File not found: ${shown}`);
     }
     if (stats.isDirectory) {
-      return errorResult(`路径是目录而不是文件：${shown}`);
+      return errorResult(`Path is a directory, not a file: ${shown}`);
     }
     const oversized = stats.size > MAX_FILE_SIZE;
     const segmented = input.offset !== undefined || input.limit !== undefined;
     if (oversized && !segmented) {
       return errorResult(
-        `文件过大（${(stats.size / 1024 / 1024).toFixed(1)}MB），超过 ` +
-          `${MAX_FILE_SIZE / 1024 / 1024}MB 上限，请用 offset/limit 分段读取：${shown}`,
+        `File is too large (${(stats.size / 1024 / 1024).toFixed(1)}MB), over the ` +
+          `${MAX_FILE_SIZE / 1024 / 1024}MB limit; read it in segments with offset/limit: ${shown}`,
       );
     }
     try {
       if (await isBinaryFile(absolute)) {
-        return errorResult(`文件不是文本文件（检测到二进制内容）：${shown}`);
+        return errorResult(`Not a text file (binary content detected): ${shown}`);
       }
       const offset = input.offset ?? 1;
       const limit = input.limit ?? MAX_LINES;
       if (oversized) {
         const { lines: slice, hasMore } = await readLineRange(absolute, offset, limit);
         if (slice.length === 0) {
-          return errorResult(`offset ${offset} 超出文件行数`);
+          return errorResult(`offset ${offset} is past the end of the file`);
         }
         const end = offset - 1 + slice.length;
-        const note = hasMore ? `\n[已截断：显示到第 ${end} 行]` : '';
+        const note = hasMore ? `\n[Truncated: shown through line ${end}]` : '';
         await recordRead(absolute);
         return { output: formatBody(slice, offset) + note };
       }
       const content = await readFile(absolute, 'utf8');
       const lines = content.split('\n');
       if (offset > lines.length) {
-        return errorResult(`offset ${offset} 超出文件行数（共 ${lines.length} 行）`);
+        return errorResult(`offset ${offset} is past the end of the file (${lines.length} lines)`);
       }
       const slice = lines.slice(offset - 1, offset - 1 + limit);
       const end = offset - 1 + slice.length;
-      const note = end < lines.length ? `\n[已截断：共 ${lines.length} 行，显示到第 ${end} 行]` : '';
+      const note =
+        end < lines.length
+          ? `\n[Truncated: ${lines.length} lines total, shown through line ${end}]`
+          : '';
       await recordRead(absolute);
       return { output: formatBody(slice, offset) + note };
     } catch (error) {
-      return errorResult(`读取失败：${errorMessage(error)}`);
+      return errorResult(`Read failed: ${errorMessage(error)}`);
     }
   },
 });

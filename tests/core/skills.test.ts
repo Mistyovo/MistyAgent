@@ -138,8 +138,8 @@ describe('buildSkillsSystemPromptSection', () => {
   it('非空时输出技能清单与触发说明', () => {
     const section = buildSkillsSystemPromptSection(skills);
     expect(section).toContain('review — 评审流程');
-    expect(section).toContain('skillify — 固化流程（何时使用：用户想保存流程时）');
-    expect(section).toContain('skill 工具');
+    expect(section).toContain('skillify — 固化流程 (when to use: 用户想保存流程时)');
+    expect(section).toContain('skill tool');
     expect(section).toContain('$ARGUMENTS');
   });
 });

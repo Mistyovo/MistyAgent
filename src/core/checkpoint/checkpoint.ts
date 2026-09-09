@@ -137,7 +137,7 @@ export class CheckpointStore {
     id: number,
   ): { restored: string[]; deleted: string[]; failed?: string[] } | { error: string } {
     if (!this.sealed.some((checkpoint) => checkpoint.id === id)) {
-      return { error: `checkpoint #${id} 不存在` };
+      return { error: `checkpoint #${id} not found` };
     }
     // 同一路径可能出现在多个 checkpoint：从新到旧还原，最终停在最早备份的内容
     const rewound = this.sealed

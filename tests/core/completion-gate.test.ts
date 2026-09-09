@@ -54,8 +54,8 @@ describe('evaluateCompletionGate', () => {
     const verdict = evaluateCompletionGate({ turnMessages, finalText: '已修复' });
     expect(verdict.pass).toBe(false);
     if (!verdict.pass) {
-      expect(verdict.reminder).toContain('验证命令');
-      expect(verdict.reminder).toContain('未验证');
+      expect(verdict.reminder).toContain('verification command');
+      expect(verdict.reminder).toContain('unverified');
     }
   });
 
@@ -195,7 +195,7 @@ function makeDeps(
 
 function reminders(deps: RunTurnDeps): UserMessage[] {
   return deps.messages.filter(
-    (m): m is UserMessage => m.role === 'user' && m.content.includes('验证命令'),
+    (m): m is UserMessage => m.role === 'user' && m.content.includes('verification command'),
   );
 }
 
@@ -235,7 +235,7 @@ describe('完成举证闸门（runTurn 集成）', () => {
       'user',
     ]);
     const reminder = nextRequest.messages[4] as UserMessage;
-    expect(reminder.content).toContain('验证命令');
+    expect(reminder.content).toContain('verification command');
   });
 
   it('有成功验证命令时直接收官，不发提醒', async () => {

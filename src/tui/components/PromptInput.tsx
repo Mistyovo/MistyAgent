@@ -77,13 +77,13 @@ function LineWithCursor({ line, col }: { line: string; col: number }) {
   );
 }
 
-/** 空输入时的轮换占位建议（对齐 Claude Code 的 "Try …" 提示）；busy 时换排队提示 */
+/** 空输入时的轮换占位建议；busy 时换排队提示 */
 const PLACEHOLDER_SUGGESTIONS = [
-  'Try "explain this codebase"',
-  'Try "fix the failing tests"',
-  'Try "refactor this module"',
-  'Try "review my recent changes"',
-  'Type a message, / for commands',
+  'e.g. "explain this codebase"',
+  'e.g. "fix the failing tests"',
+  'e.g. "refactor this module"',
+  'e.g. "review my recent changes"',
+  'type a message, / for commands',
 ];
 const PLACEHOLDER_ROTATE_MS = 5000;
 

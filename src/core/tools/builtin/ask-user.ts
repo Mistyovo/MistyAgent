@@ -6,18 +6,21 @@ import type { AskUserFn } from '../../question';
 import { defineTool, type Tool } from '../tool';
 
 const inputSchema = z.object({
-  question: z.string().describe('要问用户的问题'),
+  question: z.string().describe('The question to ask the user'),
   options: z
     .array(
       z.object({
-        label: z.string().describe('选项简述'),
-        description: z.string().optional().describe('选项的补充说明'),
+        label: z.string().describe('Short option label'),
+        description: z.string().optional().describe('Additional explanation for the option'),
       }),
     )
     .min(2)
     .max(4)
-    .describe('供用户选择的选项（2-4 个）'),
-  multiSelect: z.boolean().optional().describe('true 表示允许多选，默认单选'),
+    .describe('Options for the user to choose from (2-4)'),
+  multiSelect: z
+    .boolean()
+    .optional()
+    .describe('When true, multiple options may be selected; single choice by default'),
 });
 
 /**
@@ -30,9 +33,9 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
   return defineTool({
     name: 'ask_user',
     description:
-      '向用户提问并等待选择，用于需要用户拍板的分支决策（方案取舍、确认影响范围等）。' +
-      '问题一次问清，给出 2-4 个覆盖主要方向的选项，推荐项放第一个并注明"（推荐）"。' +
-      '用户可能跳过不答，此时根据已有信息自行决策。不要问无关紧要的问题，能自行决定的不要问。',
+      'Ask the user a question and wait for a choice; use it for branching decisions only the user can make (choosing between designs, confirming a blast radius, ...). ' +
+      'Ask everything in one question, offer 2-4 options covering the main directions, and put the recommended one first labelled "(recommended)". ' +
+      'The user may skip the question — then decide yourself from the information you have. Do not ask trivial questions; if you can decide it yourself, decide.',
     inputSchema,
     interactive: true,
     accesses: () => [{ kind: 'execute' }],
@@ -41,7 +44,8 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
     call: async (input, ctx) => {
       if (askUser === undefined) {
         return {
-          output: '当前为无头（print）模式，无法向用户提问；请根据已有信息自行决策并继续。',
+          output:
+            'Running headless (print mode), so the user cannot be asked; decide from the information you have and continue.',
           isError: true,
         };
       }
@@ -59,17 +63,19 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
           return { output: 'interrupted by user', isError: true };
         }
         return {
-          output: '用户取消了提问（未作答）。请根据已有信息自行决策并继续。',
+          output:
+            'The user cancelled the question without answering. Decide from the information you have and continue.',
           isError: true,
         };
       }
       if (reply.answers.length === 0) {
         return {
-          output: '用户没有选择任何选项。请根据已有信息自行决策并继续。',
+          output:
+            'The user selected no option. Decide from the information you have and continue.',
           isError: true,
         };
       }
-      return { output: `用户选择了：${reply.answers.join('、')}` };
+      return { output: `User selected: ${reply.answers.join(', ')}` };
     },
   });
 }

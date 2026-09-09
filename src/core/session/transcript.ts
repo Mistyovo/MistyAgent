@@ -141,7 +141,7 @@ export class TranscriptWriter {
   /** 历史消息（user/assistant/tool）落盘；system 消息不进历史 */
   appendMessage(message: Message): TranscriptEntry {
     if (message.role === 'system') {
-      throw new Error('system 消息不应写入 transcript');
+      throw new Error('system messages must not be written to the transcript');
     }
     return this.append(message.role, message);
   }
@@ -259,7 +259,7 @@ function isHistoryMessage(value: unknown): value is Message {
 
 export function resumeSession(filePath: string): ResumedSession {
   if (!existsSync(filePath)) {
-    throw new Error(`会话文件不存在：${filePath}`);
+    throw new Error(`Session file not found: ${filePath}`);
   }
   const entries = loadTranscript(filePath);
   // 最后一个压缩检查点之后才是有效历史，之前的原始历史已被压缩掉

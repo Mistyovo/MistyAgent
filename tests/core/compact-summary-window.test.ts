@@ -56,8 +56,8 @@ describe('摘要请求截窗（历史硬超上下文时）', () => {
     const request = provider.requests[0]!.messages;
     // 请求 = 省略概况 + 尾部窗口 + 摘要 prompt，整体估算不超限
     expect(estimateTokens(request)).toBeLessThanOrEqual(maxContextTokens);
-    expect(request[0]!.content).toContain('省略');
-    expect(request.at(-1)!.content).toContain('摘要');
+    expect(request[0]!.content).toContain('omitted');
+    expect(request.at(-1)!.content).toContain('summary');
     // 窗口是原历史的尾部切片，且窗口本身在摘要预算内
     const windowMessages = request.slice(1, -1);
     expect(windowMessages.length).toBeGreaterThan(0);
@@ -65,7 +65,7 @@ describe('摘要请求截窗（历史硬超上下文时）', () => {
     expect(estimateTokens(windowMessages)).toBeLessThanOrEqual(maxContextTokens / 2);
     expect(windowMessages).toEqual(original.slice(original.length - windowMessages.length));
     // 压缩重建照常：摘要开头 + 保留尾部
-    expect(messages[0]).toEqual({ role: 'user', content: '[历史对话摘要]\n摘要' });
+    expect(messages[0]).toEqual({ role: 'user', content: '[Conversation history summary]\n摘要' });
     expect(result!.beforeCount).toBe(40);
   });
 
@@ -91,9 +91,9 @@ describe('摘要请求截窗（历史硬超上下文时）', () => {
     const request = provider.requests[0]!.messages;
     expect(request.some((message) => message.role === 'tool')).toBe(false);
     expect(request).toHaveLength(3);
-    expect(request[0]!.content).toContain('省略');
+    expect(request[0]!.content).toContain('omitted');
     expect(request[1]).toEqual({ role: 'user', content: 'tail' });
-    expect(request[2]!.content).toContain('摘要');
+    expect(request[2]!.content).toContain('summary');
     // 重建尾部同样丢弃悬空 tool 消息
     expect(messages.map((message) => message.role)).toEqual(['user', 'user']);
   });
@@ -135,7 +135,7 @@ describe('摘要请求截窗（历史硬超上下文时）', () => {
     expect(request).toHaveLength(4);
     const digest = request[0]!;
     expect(digest.role).toBe('user');
-    expect(digest.content).toContain('更早的 6 条');
+    expect(digest.content).toContain('6 earlier history messages');
     expect(digest.content).toContain('read×1');
     expect(digest.content).toContain('bash×2');
     expect(digest.content).toContain('src/a.ts');
@@ -164,6 +164,6 @@ describe('摘要请求截窗（历史硬超上下文时）', () => {
     expect(request).toHaveLength(2);
     expect(estimateTokens(request)).toBeLessThanOrEqual(maxContextTokens);
     expect(result!.beforeCount).toBe(6);
-    expect(messages[0]!.content).toContain('[历史对话摘要]');
+    expect(messages[0]!.content).toContain('[Conversation history summary]');
   });
 });

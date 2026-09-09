@@ -103,16 +103,16 @@ describe('read 大小护栏', () => {
     expect(lines).toHaveLength(6); // 5 行 + 截断说明
     expect(lines[0]).toMatch(/^10500\trow10500-/);
     expect(lines[4]).toMatch(/^10504\trow10504-/);
-    expect(lines[5]).toBe('[已截断：显示到第 10504 行]');
+    expect(lines[5]).toBe('[Truncated: shown through line 10504]');
     expect(readFileMock).not.toHaveBeenCalled();
 
     const tail = await readTool.call({ path: 'huge.txt', offset: total, limit: 5 }, ctx);
     expect(tail.isError).toBeUndefined();
-    expect(tail.output).not.toContain('已截断');
+    expect(tail.output).not.toContain('Truncated');
 
     const out = await readTool.call({ path: 'huge.txt', offset: total + 1, limit: 5 }, ctx);
     expect(out.isError).toBe(true);
-    expect(out.output).toContain('超出文件行数');
+    expect(out.output).toContain('past the end of the file');
   });
 });
 
@@ -131,7 +131,7 @@ describe('grep 提前终止', () => {
     const result = await grepTool.call({ pattern: 'hit' }, ctx);
     expect(result.isError).toBeUndefined();
     expect(result.output.split('\n')).toHaveLength(101); // 100 条 + 截断说明
-    expect(result.output).toContain('截断');
+    expect(result.output).toContain('truncated');
     // 全树共 root + 30 个子目录；命中 100 条后遍历已终止
     expect(trackers.scannedDirs.length).toBeLessThan(dirCount + 1);
   });

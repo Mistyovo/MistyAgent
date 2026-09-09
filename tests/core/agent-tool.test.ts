@@ -39,7 +39,7 @@ describe('agent 工具（explore 子代理）', () => {
     expect(first.model).toBe('sub-model');
     expect(first.messages).toEqual([{ role: 'user', content: 'foo 定义在哪里？' }]);
     expect(first.tools.map((t) => t.name).toSorted()).toEqual(['glob', 'grep', 'read']);
-    expect(first.systemPrompt).toContain('代码探索子代理');
+    expect(first.systemPrompt).toContain('You are a code exploration subagent.');
     expect(first.systemPrompt).toContain(cwd);
     expect(first.systemPrompt).not.toContain('AGENTS.md');
     // 第二步：子 loop 内部消化了工具结果（isError 也回喂继续），主会话历史不参与
@@ -57,7 +57,7 @@ describe('agent 工具（explore 子代理）', () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.output).toBe('计划：第一步…');
-    expect(provider.requests[0]!.systemPrompt).toContain('实现规划子代理');
+    expect(provider.requests[0]!.systemPrompt).toContain('You are an implementation planning subagent.');
     expect(provider.requests[0]!.tools.map((t) => t.name).toSorted()).toEqual([
       'glob',
       'grep',
@@ -75,7 +75,7 @@ describe('agent 工具（explore 子代理）', () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.output.length).toBeLessThan(31_000);
-    expect(result.output).toContain('截断');
+    expect(result.output).toContain('truncated');
   });
 
   it('子代理没有产出文本结论时返回 isError', async () => {
@@ -89,7 +89,7 @@ describe('agent 工具（explore 子代理）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('没有产出文本结论');
+    expect(result.output).toContain('The subagent produced no text conclusion');
   });
 
   it('父 signal abort 级联到子 loop', async () => {
@@ -151,7 +151,7 @@ describe('agent 工具（自定义子代理定义）', () => {
     expect(first.systemPrompt).toContain('你是代码评审子代理');
     expect(first.systemPrompt).toContain(cwd);
     expect(first.tools.map((t) => t.name).toSorted()).toEqual(['glob', 'grep', 'read']);
-    expect(tool.description).toContain('- reviewer：代码评审');
+    expect(tool.description).toContain('- reviewer: 代码评审');
   });
 
   it('tools 白名单与 model 覆盖生效；可写代理的 prompt 含审批说明', async () => {
@@ -179,7 +179,7 @@ describe('agent 工具（自定义子代理定义）', () => {
     const first = provider.requests[0]!;
     expect(first.model).toBe('strong-model');
     expect(first.tools.map((t) => t.name).toSorted()).toEqual(['read', 'write']);
-    expect(first.systemPrompt).toContain('交互审批能力');
+    expect(first.systemPrompt).toContain('no interactive approval capability');
   });
 
   it('未知 subagent_type 返回 isError 并列出可用类型', async () => {
@@ -192,7 +192,7 @@ describe('agent 工具（自定义子代理定义）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('未知子代理类型：nope');
+    expect(result.output).toContain('Unknown subagent type: nope');
     expect(result.output).toContain('explore');
     expect(result.output).toContain('plan');
     expect(result.output).toContain('reviewer');
@@ -210,7 +210,7 @@ describe('agent 工具（自定义子代理定义）', () => {
     const result = await tool.call({ description: 'd', prompt: 'p', subagent_type: 'bad' }, ctx());
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('未知工具：nonexistent');
+    expect(result.output).toContain('declares unknown tools: nonexistent');
     expect(result.output).toContain('read');
   });
 
@@ -236,7 +236,7 @@ describe('agent 工具（自定义子代理定义）', () => {
     const second = provider.requests[1]!;
     const toolMessage = second.messages.find((m) => m.role === 'tool')!;
     expect(toolMessage.isError).toBe(true);
-    expect(toolMessage.content).toContain('子代理没有交互审批能力');
+    expect(toolMessage.content).toContain('A subagent has no interactive approval capability');
   });
 });
 
@@ -271,7 +271,7 @@ describe('agent 工具（后台子代理）', () => {
     expect(settled).toMatchObject({ kind: 'agent', status: 'completed', exitCode: 0 });
     const buffered = manager.output('task_1')!.output;
     expect(buffered).toContain('⏵ Read x.ts');
-    expect(buffered).toContain('--- 最终结论 ---');
+    expect(buffered).toContain('--- Final conclusion ---');
     expect(buffered).toContain('后台结论：foo 在 x.ts:1');
     expect(finished).toEqual([
       { id: 'task_1', status: 'completed', tail: expect.stringContaining('后台结论') },
@@ -346,6 +346,6 @@ describe('agent 工具（后台子代理）', () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('不支持后台子代理');
+    expect(result.output).toContain('Background subagents are not supported');
   });
 });

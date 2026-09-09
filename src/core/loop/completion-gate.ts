@@ -37,9 +37,9 @@ const VERIFICATION_COMMAND =
   /(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|lint|typecheck)|\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|tsc|make|mvn|gradle|oxlint)\b/i;
 
 const REMINDER =
-  '你在结论中声明了完成，但本轮没有成功运行验证命令（测试 / 构建 / lint 等）的记录。' +
-  '请先实际运行验证命令确认结果；若确实无法验证，在结论中明确说明「未验证」及原因，' +
-  '不要直接宣称完成。';
+  'Your conclusion claims the work is complete, but this turn contains no successful verification command (tests / build / lint, ...). ' +
+  'Actually run the verification command and confirm the result first; if verification is genuinely impossible, ' +
+  'state explicitly in your conclusion that it is unverified and why — do not simply declare completion.';
 
 /**
  * 完成举证闸门（借鉴 muteki 的溯源闸门）：声明完成 + 本 turn 有变更类调用

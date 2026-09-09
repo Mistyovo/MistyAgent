@@ -148,7 +148,7 @@ describe('Session', () => {
     // 第二次请求是摘要生成（原历史 + 摘要 prompt）
     expect(provider.requests[1]!.messages).toHaveLength(6);
     // 重试本步用的是压缩后的历史：摘要打头
-    expect(provider.requests[2]!.messages[0]!.content).toContain('[历史对话摘要]');
+    expect(provider.requests[2]!.messages[0]!.content).toContain('[Conversation history summary]');
     const final = session.getMessages();
     expect(final[0]!.content).toContain('这是摘要');
     expect((final.at(-1) as AssistantMessage).content).toBe('恢复回答');

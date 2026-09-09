@@ -70,8 +70,8 @@ describe('runPrintMode', () => {
     expect(code).toBe(0);
     expect(stdout).toBe('收尾\n');
     expect(stderr).not.toContain('⏵');
-    expect(stderr).toContain('无头模式无法交互审批，已自动拒绝：Bash echo hi');
-    expect(stderr).toMatch(/✗ Bash echo hi（\d+ms）/);
+    expect(stderr).toContain('Headless mode cannot prompt for approval; auto-rejected: Bash echo hi');
+    expect(stderr).toMatch(/✗ Bash echo hi \(\d+ms\)/);
   });
 
   it('只读工具放行执行：stderr 依次出现 ⏵ 启动行与 ✓ 完成行', async () => {
@@ -107,7 +107,7 @@ describe('runPrintMode', () => {
     });
     expect(code).toBe(0);
     expect(stdout.text()).toBe('收尾\n');
-    expect(stderr.text()).toMatch(/⏵ FakeRead\n✓ FakeRead（\d+ms）\n/);
+    expect(stderr.text()).toMatch(/⏵ FakeRead\n✓ FakeRead \(\d+ms\)\n/);
   });
 
   it('无头模式提问：ask_user 直接回喂自行决策，不挂起不弹审批', async () => {
@@ -123,8 +123,8 @@ describe('runPrintMode', () => {
     expect(code).toBe(0);
     expect(stdout).toBe('自行决策收尾\n');
     // 交互型工具权限直接放行：不出现审批拒绝行；工具完成行带 ✗（无头回喂是 isError）
-    expect(stderr).not.toContain('无头模式无法交互审批');
-    expect(stderr).toMatch(/✗ Ask: 选哪个方案？（\d+ms）/);
+    expect(stderr).not.toContain('Headless mode cannot prompt for approval');
+    expect(stderr).toMatch(/✗ Ask: 选哪个方案？ \(\d+ms\)/);
   });
 
   it('error：错误写 stderr，退出码 1', async () => {
@@ -159,7 +159,7 @@ describe('runPrintMode', () => {
 
     expect(code).toBe(0);
     expect(stdout.text()).toBe('备用模型收尾\n');
-    expect(stderr.text()).toContain('模型 primary 失败，切换到 backup-a');
+    expect(stderr.text()).toContain('Model primary failed, switching to backup-a');
     // fallback 仅当前 turn 生效：session 模型不变
     expect(session.getModel()).toBe('primary');
   });
@@ -202,11 +202,11 @@ describe('runPrintMode', () => {
 
     expect(code).toBe(0);
     expect(stdout.text()).toBe('以文本输出计划\n');
-    expect(stderr.text()).toContain('无头模式无法交互批准计划');
+    expect(stderr.text()).toContain('Headless mode cannot prompt for plan approval');
     const toolMessage = session.getMessages().find((m) => m.role === 'tool');
     expect(toolMessage).toMatchObject({ name: 'exit_plan_mode', isError: true });
-    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('计划被拒绝');
-    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('无头');
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('The plan was rejected');
+    expect(toolMessage?.role === 'tool' && toolMessage.content).toContain('headless');
     // 自动拒绝不退出计划模式
     expect(session.isPlanMode()).toBe(true);
   });
@@ -279,7 +279,7 @@ describe('runPrintMode --output-format stream-json', () => {
       (line) => (line as { type: string }).type === 'tool-call-completed',
     ) as { isError: boolean };
     expect(completed.isError).toBe(true);
-    expect(stderr).toContain('无头模式无法交互审批');
+    expect(stderr).toContain('Headless mode cannot prompt for approval');
   });
 
   it('delta 在工具事件边界保序冲刷：assistant_text 先于其后的 tool-call-started', async () => {
@@ -375,8 +375,8 @@ describe('runPrintMode 后台任务 drain', () => {
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(2900);
     expect(elapsed).toBeLessThan(8000);
-    expect(stderr.text()).toContain('还有 1 个后台任务在运行');
-    expect(stderr.text()).toContain('未在等待期内结束，已终止');
+    expect(stderr.text()).toContain('1 background task(s) still running');
+    expect(stderr.text()).toContain('did not finish within the wait window; terminated');
     expect(tasks.list()[0]?.status).toBe('killed');
   }, 15000);
 
@@ -421,8 +421,8 @@ describe('runPrintMode 后台任务 drain', () => {
 
     expect(code).toBe(0);
     // echo 在 drain 前已完成：没有"等待/终止"提示
-    expect(stderr.text()).not.toContain('后台任务在运行');
-    expect(stderr.text()).toMatch(/⚙ task_1 已完成（exit 0）/);
+    expect(stderr.text()).not.toContain('background task(s) still running');
+    expect(stderr.text()).toMatch(/⚙ task_1 completed \(exit 0\)/);
   }, 15000);
 });
 
@@ -448,7 +448,7 @@ describe('resolvePrintPrompt（print 模式管道 stdin）', () => {
     const over = 'a'.repeat(PRINT_STDIN_MAX_BYTES + 100);
     const result = await resolvePrintPrompt('review', fakeStdin([over]));
     expect(result).toBe(
-      `review\n\n--- stdin ---\n${'a'.repeat(PRINT_STDIN_MAX_BYTES)}\n[…stdin 内容超过 1MB，已截断]`,
+      `review\n\n--- stdin ---\n${'a'.repeat(PRINT_STDIN_MAX_BYTES)}\n[…stdin exceeds 1MB, truncated]`,
     );
   });
 });

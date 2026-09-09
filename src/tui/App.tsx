@@ -17,6 +17,7 @@ import { QuestionDialog } from './components/QuestionDialog';
 import { StatusBar } from './components/StatusBar';
 import { StreamingArea } from './components/StreamingArea';
 import { TodoList } from './components/TodoList';
+import { LOGO_ASCII, LOGO_NARROW, MISTY_TAGLINE } from './logo';
 import type { PendingDialog } from './controllers/session-reducer';
 import { useSessionController } from './controllers/session-events';
 import { getTerminalWidthMode, useTerminalTextWrap } from './terminal-text';
@@ -42,41 +43,37 @@ export interface AppProps {
 const EXIT_ARM_MS = 3000;
 
 /**
- * 空会话欢迎头（启动值快照，不随 turn 内 fallback/模式切换更新）。
+ * 空会话欢迎横幅（启动值快照，不随 turn 内 fallback/模式切换更新）。
  * 只能渲染在动态区：ink 单棵树只支持一个 Static（被消息区占用），
  * Static 内容恒在动态区之上——常驻 banner 会被夹到消息历史与流式区之间，
  * 因此 banner 随空态一起退场。
- * 块状 logo 只在 narrow 终端渲染（█ 是歧义宽字符，legacy-cjk 按 2 格
- * 渲染会撑歪比例），legacy-cjk 回退纯文本 wordmark。
+ * 左侧雾灵吉祥物（见 logo.ts）+ 右侧 wordmark/标语；legacy-cjk 终端
+ * 用纯 ASCII 雾灵（歧义宽字符在老式 conhost 会按 2 格渲染撑歪比例）。
  */
-const LOGO_LINES = [
-  '█   █  █  ███  █████  █   █',
-  '██ ██  █  █       █     █ █ ',
-  '█ █ █  █   ███    █      █  ',
-  '█   █  █       █  █      █  ',
-  '█   █  █  ███  ███     █  ',
-];
-
 function WelcomeBanner({ model, mode }: { model: string; mode: PermissionMode }) {
   const theme = getTheme();
   const wrap = useTerminalTextWrap();
   const meta = permissionModeMeta[mode];
-  const narrow = getTerminalWidthMode() === 'narrow';
+  const logo = getTerminalWidthMode() === 'narrow' ? LOGO_NARROW : LOGO_ASCII;
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {narrow ? (
-        LOGO_LINES.map((line, index) => (
-          <Text key={index} bold color={theme.accent}>
-            {line}
+      <Box flexDirection="row" alignItems="center">
+        <Box flexDirection="column">
+          {logo.map((line, index) => (
+            <Text key={index} {...(line.dim === true ? { dimColor: true } : { color: theme.accent })}>
+              {line.text}
+            </Text>
+          ))}
+        </Box>
+        <Box flexDirection="column" marginLeft={2}>
+          <Text bold color={theme.accent}>
+            Misty
           </Text>
-        ))
-      ) : (
-        <Text bold color={theme.accent}>
-          Misty
-        </Text>
-      )}
+          <Text dimColor>{wrap(MISTY_TAGLINE)}</Text>
+        </Box>
+      </Box>
       <Text dimColor>
-        {wrap(`${model} · ${meta.symbol} ${meta.label} · /help for commands`)}
+        {wrap(`${model} ~ ${meta.symbol} ${meta.label} ~ /help for commands`)}
       </Text>
     </Box>
   );

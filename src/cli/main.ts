@@ -143,7 +143,7 @@ function rewindCheckpoints(store: CheckpointStore, id?: string): string {
 
 function formatSessionLine(session: SessionSummary): string {
   const date = new Date(session.mtimeMs).toLocaleString();
-  const summary = session.summary === '' ? '（无消息）' : session.summary;
+  const summary = session.summary === '' ? '(no messages)' : session.summary;
   return `  ${session.sessionId.slice(0, 8)}  ${date}  ${summary}`;
 }
 
@@ -156,7 +156,7 @@ function resolveResumeTarget(options: CliOptions, cwd: string): SessionSummary |
   if (options.continue === true) {
     const sessions = listSessions(cwd);
     if (sessions.length === 0) {
-      console.error('当前目录没有可恢复的会话，开始新会话');
+      console.error('No resumable session in the current directory; starting a new session');
       return null;
     }
     return sessions[0]!;
@@ -167,17 +167,17 @@ function resolveResumeTarget(options: CliOptions, cwd: string): SessionSummary |
   const sessions = listSessions(cwd);
   if (options.resume === true) {
     if (sessions.length === 0) {
-      console.error('当前目录没有可恢复的会话，开始新会话');
+      console.error('No resumable session in the current directory; starting a new session');
       return null;
     }
     if (sessions.length === 1) {
       return sessions[0]!;
     }
-    console.error('当前目录有多个会话：');
+    console.error('Multiple sessions in the current directory:');
     for (const session of sessions) {
       console.error(formatSessionLine(session));
     }
-    console.error('请用 --resume <sessionId> 指定（可只填前缀）');
+    console.error('Specify one with --resume <sessionId> (a prefix is enough)');
     return 'listed';
   }
   if (typeof options.resume !== 'string') {
@@ -189,10 +189,10 @@ function resolveResumeTarget(options: CliOptions, cwd: string): SessionSummary |
     (session) => session.sessionId === id || session.sessionId.startsWith(id),
   );
   if (matches.length === 0) {
-    fail(`当前目录没有会话 ${id}（--resume 不带参数可列出全部会话）`);
+    fail(`No session ${id} in the current directory (run --resume with no argument to list all sessions)`);
   }
   if (matches.length > 1) {
-    fail(`会话 id 前缀 ${id} 匹配到多个会话，请填更长前缀`);
+    fail(`Session id prefix ${id} matches multiple sessions; use a longer prefix`);
   }
   return matches[0]!;
 }
@@ -236,8 +236,8 @@ async function action(options: CliOptions): Promise<void> {
   } catch (error) {
     fail(
       `${errorMessage(error)}\n` +
-        '提示：先设置环境变量，例如 `export MISTY_API_KEY=sk-...`（cmd 用 `set MISTY_API_KEY=...`），' +
-        '可选 MISTY_BASE_URL / MISTY_MODEL 指定服务与模型。',
+        'Hint: set the environment variable first, e.g. `export MISTY_API_KEY=sk-...` (on cmd use `set MISTY_API_KEY=...`); ' +
+        'optional MISTY_BASE_URL / MISTY_MODEL select the endpoint and model.',
     );
   }
 
@@ -280,7 +280,7 @@ async function action(options: CliOptions): Promise<void> {
     exitPlanMode: (target) => sessionRef?.exitPlanMode(target) ?? false,
     requestPlanApproval: (request, signal) =>
       sessionRef?.requestPlanApproval(request, signal) ??
-      Promise.resolve({ approved: false, feedback: '会话尚未就绪，无法提交计划审批' }),
+      Promise.resolve({ approved: false, feedback: 'Session is not ready yet; cannot submit plan approval' }),
   };
   const registry = createBuiltinRegistry({
     todoStore,
@@ -315,7 +315,7 @@ async function action(options: CliOptions): Promise<void> {
   if (resumed !== null) {
     sessionConfig.transcript = { sessionId: resumed.sessionId };
     sessionConfig.initialMessages = resumed.messages;
-    console.error(`已恢复会话 ${resumed.sessionId.slice(0, 8)}（${resumed.messages.length} 条消息）`);
+    console.error(`Resumed session ${resumed.sessionId.slice(0, 8)} (${resumed.messages.length} messages)`);
   }
   const session = new Session({
     ...sessionConfig,
@@ -346,7 +346,7 @@ async function action(options: CliOptions): Promise<void> {
 
   if (process.stdout.isTTY !== true || process.stdin.isTTY !== true) {
     await mcpManager?.close();
-    fail('TUI 需要交互式终端（TTY）；自动化 / CI 场景请使用 -p, --print <prompt>。');
+    fail('TUI requires an interactive terminal (TTY); for automation / CI, use -p, --print <prompt>.');
   }
 
   // 动态 import：print 模式不加载 ink/react，也避免非 TTY 环境下的初始化开销
@@ -372,28 +372,28 @@ const program = new Command();
 
 program
   .name('misty')
-  .description('Misty — 私人定制 CLI coding agent（OpenAI 兼容 API）')
+  .description('Misty — a personal CLI coding agent (OpenAI-compatible API)')
   .version('0.1.0')
-  .option('--model <model>', '覆盖默认模型（等价于 MISTY_MODEL）')
+  .option('--model <model>', 'Override the default model (equivalent to MISTY_MODEL)')
   .option(
     '--fallback <model>',
-    '追加备用模型：主模型失败时按添加顺序降级（可多次使用，仅当前 turn 生效）',
+    'Append a fallback model: fall back in the order added when the primary model fails (repeatable, current turn only)',
     collect,
     [] as string[],
   )
-  .option('--base-url <url>', '覆盖 API base URL（等价于 MISTY_BASE_URL）')
+  .option('--base-url <url>', 'Override the API base URL (equivalent to MISTY_BASE_URL)')
   .addOption(
-    new Option('--mode <mode>', '权限模式').choices(permissionModeSchema.options),
+    new Option('--mode <mode>', 'Permission mode').choices(permissionModeSchema.options),
   )
-  .option('-p, --print <prompt>', '无头模式：执行一个 prompt，文本流式输出到 stdout 后退出')
+  .option('-p, --print <prompt>', 'Headless mode: run one prompt, stream text to stdout, then exit')
   .addOption(
     new Option(
       '--output-format <format>',
-      '无头模式输出格式：text（人类可读）或 stream-json（stdout 为 NDJSON 事件流）',
+      'Headless output format: text (human-readable) or stream-json (NDJSON event stream on stdout)',
     ).choices(['text', 'stream-json']),
   )
-  .option('-c, --continue', '恢复当前目录最近一次会话')
-  .option('--resume [sessionId]', '恢复指定会话；不带参数时列出候选（多个时选其一）')
+  .option('-c, --continue', 'Resume the most recent session in the current directory')
+  .option('--resume [sessionId]', 'Resume a specific session; without an argument, list candidates (pick one when several match)')
   .action((options: CliOptions) => action(options));
 
 try {

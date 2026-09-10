@@ -12,7 +12,8 @@ const SUBMIT_PATH = '/ff874ef3172cbf4fd6ec2c5653a568e2';
 export interface CompetitionConnection {
   docker_url?: string;
   docker_ip?: string;
-  docker_port?: string;
+  /** 平台实际返回数字（如 45277），文档写的是字符串，两者都收 */
+  docker_port?: string | number;
   [key: string]: unknown;
 }
 

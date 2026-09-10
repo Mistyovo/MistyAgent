@@ -178,6 +178,34 @@ describe('competition tools', () => {
     expect(list.describeCall({})).toBe('List competition questions');
   });
 
+  it('competition_list 对纯 ip+数字端口的接入信息组合出 nc 命令（真实平台形态）', async () => {
+    respondJson({
+      code: 0,
+      message: '查询成功',
+      data: [
+        {
+          question_id: 'q-pwn-3',
+          title: 'pwn01',
+          score: 500,
+          real_score: 500,
+          file_url: '',
+          is_solved: false,
+          solved_number: 86,
+          category: 'pwn',
+          attributes: ['docker'],
+          description: 'test',
+          interactive: 'true',
+          capabilities: ['docker'],
+          connection: { docker_ip: '39.106.48.123', docker_port: 45277 },
+          extensions: {},
+        },
+      ],
+    });
+    const list = createCompetitionTools(client())[0]!;
+    const result = await list.call({}, ctx);
+    expect(result.output).toContain('connection: nc 39.106.48.123 45277');
+  });
+
   it('competition_reset 成功与平台拒绝分别回喂', async () => {
     const [, reset] = createCompetitionTools(client());
     respondJson({ code: 0, message: '操作成功' });

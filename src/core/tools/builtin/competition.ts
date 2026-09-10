@@ -22,7 +22,9 @@ function formatConnection(question: CompetitionQuestion): string | undefined {
     return url;
   }
   const ip = typeof connection.docker_ip === 'string' ? connection.docker_ip : undefined;
-  const port = typeof connection.docker_port === 'string' ? connection.docker_port : undefined;
+  const rawPort = connection.docker_port;
+  const port =
+    typeof rawPort === 'string' || typeof rawPort === 'number' ? String(rawPort) : undefined;
   if (ip !== undefined && ip !== '' && port !== undefined && port !== '') {
     return `nc ${ip} ${port}`;
   }

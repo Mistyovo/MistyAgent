@@ -276,6 +276,27 @@ loop 质量护栏（常开，无需配置）：
 - 状态栏实时显示上下文用量（`ctx 42%`，≥75% 变警示色、≥90% 变错误色）与 token
   用量（端点上报缓存命中时附 `缓存 n`）
 
+### CTF 赛事接入（湾区杯）
+
+面向湾区杯 Agent 大赛等春秋GAME apiterminator 平台的解题赛接入。队伍 token 只走
+环境变量，未设置时相关工具不注册、行为与主线完全一致：
+
+```bash
+export MISTY_CTF_TOKEN=<队伍token>   # 或 CTF_TOKEN；MISTY_CTF_BASE_URL 可指向本地 mock
+misty
+```
+
+注册三个工具供模型在解题流程中调用：
+
+- `competition_list`（只读）：拉取全部赛题——id、标题、分类、分值、解题数、
+  描述、附件 URL 与容器题接入信息（`nc ip port`）
+- `competition_reset`：重置容器题环境（仅容器题支持，静态题平台会拒绝）
+- `competition_submit`：提交 flag；正确/错误均回喂为工具结果，不中断 agent loop
+
+工具失败（token 失效、网络超时、非 JSON 响应等）统一转为 `CompetitionApiError`
+的 isError 工具结果回喂模型。print 无头模式下配合 `--permission-mode
+bypassPermissions` 即可全自动解题。
+
 ### 检查点与回滚
 
 每个 turn 开始时自动开一个检查点：turn 内 `write` / `edit` 首次改动某个文件前，

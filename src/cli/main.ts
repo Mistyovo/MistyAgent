@@ -8,6 +8,7 @@ import {
 } from '#/config/settings';
 import { TaskBoard } from '#/core/board';
 import { CheckpointStore, cleanupCheckpoints } from '#/core/checkpoint/checkpoint';
+import { CompetitionClient } from '#/core/competition';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { McpManager } from '#/core/mcp/manager';
 import { getMemoryDir } from '#/core/memory/paths';
@@ -282,6 +283,24 @@ async function action(options: CliOptions): Promise<void> {
       sessionRef?.requestPlanApproval(request, signal) ??
       Promise.resolve({ approved: false, feedback: 'Session is not ready yet; cannot submit plan approval' }),
   };
+  // 赛事平台接入：队伍 token 只走环境变量（MISTY_CTF_TOKEN / CTF_TOKEN），
+  // 未设置时不注册 competition_* 工具；MISTY_CTF_BASE_URL 可指向本地 mock
+  const ctfToken =
+    process.env.MISTY_CTF_TOKEN !== undefined && process.env.MISTY_CTF_TOKEN !== ''
+      ? process.env.MISTY_CTF_TOKEN
+      : process.env.CTF_TOKEN;
+  const competition =
+    ctfToken !== undefined && ctfToken !== ''
+      ? new CompetitionClient({
+          token: ctfToken,
+          ...(process.env.MISTY_CTF_BASE_URL !== undefined && process.env.MISTY_CTF_BASE_URL !== ''
+            ? { baseUrl: process.env.MISTY_CTF_BASE_URL }
+            : {}),
+        })
+      : undefined;
+  if (competition !== undefined) {
+    console.error('Competition tools enabled: competition_list / competition_reset / competition_submit');
+  }
   const registry = createBuiltinRegistry({
     todoStore,
     taskManager,
@@ -291,6 +310,7 @@ async function action(options: CliOptions): Promise<void> {
     subagents: subagents.definitions,
     skills,
     board: taskBoard,
+    competition,
     // 子代理沿用主会话权限判定（含 /mode 运行时切换）；ask 由子代理侧自动拒绝
     getPermissionContext: () =>
       sessionRef?.getPermissionContext() ?? {

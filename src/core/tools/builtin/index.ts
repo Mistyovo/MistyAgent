@@ -3,6 +3,7 @@ import type { ChatProvider } from '#/provider/types';
 import type { TaskBoard } from '../../board';
 import type { CheckpointStore } from '../../checkpoint/checkpoint';
 import { withCheckpoint } from '../../checkpoint/wrap';
+import type { CompetitionClient } from '../../competition';
 import type { PermissionContext } from '../../permission/pipeline';
 import type { PlanModeHost } from '../../plan-mode';
 import type { AskUserFn } from '../../question';
@@ -16,6 +17,7 @@ import type { Tool } from '../tool';
 import { createAgentTool } from './agent';
 import { createAskUserTool } from './ask-user';
 import { createBashTool } from './bash';
+import { createCompetitionTools } from './competition';
 import { editTool } from './edit';
 import { globTool } from './glob';
 import { grepTool } from './grep';
@@ -69,6 +71,8 @@ export interface BuiltinHost {
   getPermissionContext?: () => PermissionContext;
   /** 检查点存储：提供后 write/edit 首次改动某文件前自动快照（/rewind 回滚的数据来源） */
   checkpoints?: CheckpointStore | undefined;
+  /** 赛事平台客户端（队伍 token 经 MISTY_CTF_TOKEN 注入）：提供后注册 competition_* 三件套 */
+  competition?: CompetitionClient | undefined;
 }
 
 export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
@@ -87,6 +91,11 @@ export function createBuiltinRegistry(host?: BuiltinHost): ToolRegistry {
   registry.register(createTaskListTool(taskManager));
   registry.register(createTodoTool(host?.todoStore ?? new TodoStore()));
   registry.register(createAskUserTool(host?.askUser));
+  if (host?.competition !== undefined) {
+    for (const tool of createCompetitionTools(host.competition)) {
+      registry.register(tool);
+    }
+  }
   if (host?.skills !== undefined && host.skills.length > 0) {
     registry.register(createSkillTool(host.skills));
   }

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -108,5 +108,34 @@ describe('createMistySpawner', () => {
     const exit = await proc.exited;
     expect(exit.code).toBeNull();
     expect(exit.output).toContain('spawn error');
+  });
+
+  it('下发父进程配置到题目录（子进程 cwd 读不到启动目录的配置）', async () => {
+    const script = writeFakeMisty();
+    const argvFile = join(workDir, 'argv.json');
+    const settings = {
+      provider: { type: 'openai' as const, apiKey: 'sk-child', defaultModel: 'm' },
+    };
+    const spawner = createMistySpawner(`node ${script} ${argvFile}`, settings);
+    const proc = spawner(
+      {
+        questionId: 'q9',
+        title: 't9',
+        category: 'web',
+        score: 500,
+        description: '',
+        fileUrl: '',
+        interactive: false,
+        connectionUrl: undefined,
+      },
+      workDir,
+      1,
+    );
+    const exit = await proc.exited;
+    expect(exit.code).toBe(0);
+    const childSettings = JSON.parse(
+      readFileSync(join(workDir, '.misty', 'settings.json'), 'utf8'),
+    ) as { provider: { apiKey: string } };
+    expect(childSettings.provider.apiKey).toBe('sk-child');
   });
 });

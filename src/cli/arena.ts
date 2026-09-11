@@ -3,6 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, statSync, writeSync, writ
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadSettings } from '#/config/settings';
+import type { Settings } from '#/config/schema';
 import {
   ArenaRunner,
   buildSolvePrompt,
@@ -40,8 +42,15 @@ function parseCommand(command: string): { command: string; args: string[] } {
   return { command: parts[0] ?? command, args: parts.slice(1) };
 }
 
-export function createMistySpawner(mistyCmd?: string): ArenaSpawner {
+export function createMistySpawner(mistyCmd?: string, settings?: Settings): ArenaSpawner {
   return (target: ArenaTarget, dir: string, attempt: number): ArenaProcess => {
+    // 子进程 cwd 在各题目录，读不到启动目录的配置文件；把父进程加载到的
+    // 完整配置下发过去（含 apiKey），保证任何目录布局下行为一致
+    if (settings !== undefined) {
+      const childConfigDir = join(dir, '.misty');
+      mkdirSync(childConfigDir, { recursive: true });
+      writeFileSync(join(childConfigDir, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
+    }
     const logPath = join(dir, 'run.log');
     const fd = openSync(logPath, 'a');
     writeSync(fd, `\n===== attempt ${attempt} @ ${new Date().toISOString()} =====\n`);
@@ -120,9 +129,17 @@ export async function runArenaCommand(options: ArenaCliOptions): Promise<number>
   const workDir = options.dir ?? join(process.cwd(), 'ctf-arena');
   mkdirSync(workDir, { recursive: true });
   console.log(`arena workdir: ${workDir}`);
+  // arena 自身不调模型，但解题子进程需要；加载失败不阻断 arena 启动，
+  // 子进程会在自己的 run.log 里暴露缺 key 的错误
+  let settings: Settings | undefined;
+  try {
+    settings = loadSettings(process.cwd()).settings;
+  } catch {
+    settings = undefined;
+  }
   const runner = new ArenaRunner({
     client,
-    spawner: createMistySpawner(options.mistyCmd),
+    spawner: createMistySpawner(options.mistyCmd, settings),
     workDir,
     ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
     ...(options.attempts !== undefined ? { maxAttempts: options.attempts } : {}),

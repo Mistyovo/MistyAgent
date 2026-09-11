@@ -69,9 +69,11 @@ CLI 入口 (commander)
   切换发出 `model-fallback` 事件（TUI 落暗色提示、状态栏模型名更新；print 模式写 stderr）。
   **fallback 仅当前 turn 生效**：后续 step 沿用切换后的模型，新 turn 从主模型重新开始
 
-**注意**：API key 以明文落在 settings.json（用户级或项目级皆可，项目级覆盖用户级），
-请自行确保该文件不进 git、不被无关进程读取（例如把 `.misty/settings.json` 加进
-`.gitignore`）。
+**注意**：API key 以明文落在 settings.json（推荐放项目级 `.misty/settings.json`，
+即当前文件夹；用户级 `~/.misty/settings.json` 仍可用，项目级覆盖用户级），请确保
+该文件不进 git（模板 `.gitignore` 已含 `.misty/settings.json`）。`misty arena`
+的解题子进程 cwd 在各题目录，读不到启动目录的配置——arena 会把启动时加载到的
+完整配置自动下发到每个题目录的 `.misty/settings.json`。
 
 ### Hooks
 

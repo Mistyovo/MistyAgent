@@ -1,6 +1,3 @@
-node_modules/
-dist/
-awesome_example/
 .misty/local/
-*.log
-coverage/
+.misty/settings.json
+node_modules

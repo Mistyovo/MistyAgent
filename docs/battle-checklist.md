@@ -90,7 +90,7 @@
 
 1. [ ] **(0–5min) 录屏开始**。文件名就按规范起，从调试期一直录。
 2. [ ] **(5–15min) 登录 + 取证**：登录 `match.ichunqiu.com/wanqujswj`（赛道二决赛地址，注意不是测试地址 `/aiagent`）；下载**决赛版接口文档**，与 `src/core/competition.ts` 逐字段比对：接口 hash 是否变化、字段是否增减、`code/status` 语义是否一致。变了 → 当场用 C1 的环境变量改配置，不动代码。
-3. [ ] **(15–25min) 跑 `misty smoke`**：官方 key/baseURL 写进 `~/.misty/settings.json` 的 provider 段 → 模型对话 OK → `competition_list` OK → bash/python/网络 OK。任何一项红 → 当场修。
+3. [ ] **(15–25min) 跑 `misty smoke`**：官方 key/baseURL 写进工作目录 `.misty/settings.json` 的 provider 段 → 模型对话 OK → `competition_list` OK → bash/python/网络 OK。任何一项红 → 当场修。
 4. [ ] **(25–45min) 全流程彩排**：`misty-arena` 跑一遍测试题（或回放假题），确认并行、提交、汇总、WriteUp 素材生成全链路。
 5. [ ] **(45–60min) 极端演练**：拔网线 10 秒再插回，看 agent 行为；kill 一个解题进程，看 watchdog；确认录屏文件正常增长。
 6. [ ] 答疑时段问清三件事：①环节二每轮题目数量与分值分布 ②token 决赛是否重新发放 ③录屏是否覆盖准备期。
@@ -106,7 +106,7 @@
 
 **准备期（30 分钟，手可操作，按序执行，超时项跳过）：**
 1. [ ] 确认录屏进行中
-2. [ ] 官方 key/baseURL 写进 `~/.misty/settings.json`；token 进 `MISTY_CTF_TOKEN` 环境变量（一键脚本完成）
+2. [ ] 官方 key/baseURL 写进工作目录 `.misty/settings.json`；token 进 `MISTY_CTF_TOKEN` 环境变量（一键脚本完成；arena 会自动把配置下发到各题目录）
 3. [ ] `misty-smoke` 全绿（≤2 分钟）
 4. [ ] `competition_list` 拉题，肉眼过一遍题面/分值/类型
 5. [ ] 启动 `misty-arena`，确认各题进程都跑起来

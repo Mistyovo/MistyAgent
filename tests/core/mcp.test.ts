@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url';
-
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
 
@@ -14,15 +12,52 @@ import type { Tool } from '#/core/tools/tool';
 import { FakeProvider, textStep, toolCallStep } from './fake-provider';
 
 const cwd = process.cwd();
-const fixturePath = fileURLToPath(new URL('../fixtures/fake-mcp-server.mjs', import.meta.url));
 
-const fakeServer: McpServerConfig = { command: process.execPath, args: [fixturePath] };
+/**
+ * 测试用 stdio MCP server 以 `node -e` 内联起进程（不落盘独立文件）。
+ * spawn 不经 shell，脚本字符串无需引号转义。
+ */
+const FAKE_MCP_SERVER = `
+(async () => {
+  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+  const { z } = await import('zod');
+  const server = new McpServer({ name: 'fake-mcp', version: '0.0.1' });
+  server.registerTool(
+    'echo',
+    { description: '回显输入文本', inputSchema: { text: z.string() } },
+    async ({ text }) => ({ content: [{ type: 'text', text: \`echo: \${text}\` }] }),
+  );
+  server.registerTool(
+    'env',
+    { description: '读取 server 进程环境变量', inputSchema: { name: z.string() } },
+    async ({ name }) => ({ content: [{ type: 'text', text: process.env[name] ?? '' }] }),
+  );
+  server.registerTool('fail', { description: '总是返回错误结果', inputSchema: {} }, async () => ({
+    content: [{ type: 'text', text: 'boom' }],
+    isError: true,
+  }));
+  process.stdin.on('end', () => process.exit(0));
+  await server.connect(new StdioServerTransport());
+})();
+`;
 
 /** 永不回包 tools/call 的 server（握手与 listTools 正常），用于中断/超时用例 */
-const hangFixturePath = fileURLToPath(
-  new URL('../fixtures/hang-mcp-server.mjs', import.meta.url),
-);
-const hangServer: McpServerConfig = { command: process.execPath, args: [hangFixturePath] };
+const HANG_MCP_SERVER = `
+(async () => {
+  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+  const server = new McpServer({ name: 'hang-mcp', version: '0.0.1' });
+  server.registerTool('hang', { description: '接收请求但永不返回结果', inputSchema: {} }, () => {
+    return new Promise(() => {});
+  });
+  process.stdin.on('end', () => process.exit(0));
+  await server.connect(new StdioServerTransport());
+})();
+`;
+
+const fakeServer: McpServerConfig = { command: process.execPath, args: ['-e', FAKE_MCP_SERVER] };
+const hangServer: McpServerConfig = { command: process.execPath, args: ['-e', HANG_MCP_SERVER] };
 
 /** 真实拉起子进程的用例给足超时（Windows 上 node 启动较慢） */
 const SPAWN_TIMEOUT = 30_000;

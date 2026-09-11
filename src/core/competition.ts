@@ -41,6 +41,25 @@ export interface SubmitOutcome {
   message: string;
 }
 
+/** 容器题的人类可读接入串：优先 docker_url，否则组合 nc ip port；非容器题返回 undefined */
+export function formatConnection(connection: CompetitionConnection | undefined): string | undefined {
+  if (connection === undefined) {
+    return undefined;
+  }
+  const url = typeof connection.docker_url === 'string' ? connection.docker_url : undefined;
+  if (url !== undefined && url !== '') {
+    return url;
+  }
+  const ip = typeof connection.docker_ip === 'string' ? connection.docker_ip : undefined;
+  const rawPort = connection.docker_port;
+  const port =
+    typeof rawPort === 'string' || typeof rawPort === 'number' ? String(rawPort) : undefined;
+  if (ip !== undefined && ip !== '' && port !== undefined && port !== '') {
+    return `nc ${ip} ${port}`;
+  }
+  return undefined;
+}
+
 /** 平台返回 code !== 0，或 HTTP 层失败 */
 export class CompetitionApiError extends Error {
   readonly code: number | undefined;
@@ -122,6 +141,10 @@ export interface CompetitionClientOptions {
   token: string;
   /** 默认 COMPETITION_API_BASE_URL */
   baseUrl?: string;
+  /** 查询/重置/提交接口路径；决赛若更换 hash 经环境变量覆盖，零代码改动 */
+  queryPath?: string;
+  resetPath?: string;
+  submitPath?: string;
   /** 默认 DEFAULT_WEB_TIMEOUT_MS */
   timeoutMs?: number;
 }
@@ -129,16 +152,22 @@ export interface CompetitionClientOptions {
 export class CompetitionClient {
   private readonly token: string;
   private readonly baseUrl: string;
+  private readonly paths: { query: string; reset: string; submit: string };
   private readonly timeoutMs: number;
 
   constructor(options: CompetitionClientOptions) {
     this.token = options.token;
     this.baseUrl = (options.baseUrl ?? COMPETITION_API_BASE_URL).replace(/\/+$/, '');
+    this.paths = {
+      query: options.queryPath ?? QUERY_PATH,
+      reset: options.resetPath ?? RESET_PATH,
+      submit: options.submitPath ?? SUBMIT_PATH,
+    };
     this.timeoutMs = options.timeoutMs ?? DEFAULT_WEB_TIMEOUT_MS;
   }
 
   async listQuestions(signal?: AbortSignal): Promise<CompetitionQuestion[]> {
-    const url = `${this.baseUrl}${QUERY_PATH}?token=${encodeURIComponent(this.token)}`;
+    const url = `${this.baseUrl}${this.paths.query}?token=${encodeURIComponent(this.token)}`;
     const envelope = requireOk(await this.request(url, signal), url);
     const questions = Array.isArray(envelope.data) ? envelope.data : [];
     return questions.map(normalizeQuestion);
@@ -147,7 +176,7 @@ export class CompetitionClient {
   /** 仅容器题支持重置；静态题调用会收到平台的非 0 code */
   async resetEnvironment(questionId: string, signal?: AbortSignal): Promise<string> {
     const url =
-      `${this.baseUrl}${RESET_PATH}?token=${encodeURIComponent(this.token)}` +
+      `${this.baseUrl}${this.paths.reset}?token=${encodeURIComponent(this.token)}` +
       `&question_id=${encodeURIComponent(questionId)}`;
     const envelope = requireOk(await this.request(url, signal), url);
     return asString(envelope.message, '操作成功');
@@ -156,7 +185,7 @@ export class CompetitionClient {
   /** flag 错误是正常结果（correct: false），只有平台拒绝才抛错 */
   async submitFlag(questionId: string, flag: string, signal?: AbortSignal): Promise<SubmitOutcome> {
     const url =
-      `${this.baseUrl}${SUBMIT_PATH}?token=${encodeURIComponent(this.token)}` +
+      `${this.baseUrl}${this.paths.submit}?token=${encodeURIComponent(this.token)}` +
       `&question_id=${encodeURIComponent(questionId)}` +
       `&answer=${encodeURIComponent(flag)}`;
     const envelope = requireOk(await this.request(url, signal), url);

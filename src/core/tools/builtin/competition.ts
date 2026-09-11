@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { CompetitionClient, CompetitionQuestion } from '#/core/competition';
-import { CompetitionApiError } from '#/core/competition';
+import { CompetitionApiError, formatConnection } from '#/core/competition';
 import { errorMessage } from '#/core/errors';
 
 import type { Tool } from '../tool';
@@ -11,25 +11,6 @@ import { errorResult, truncate } from './fs-utils';
 
 const DESCRIPTION_PREVIEW_CHARS = 200;
 const MAX_OUTPUT_CHARS = 30_000;
-
-function formatConnection(question: CompetitionQuestion): string | undefined {
-  const connection = question.connection;
-  if (connection === undefined) {
-    return undefined;
-  }
-  const url = typeof connection.docker_url === 'string' ? connection.docker_url : undefined;
-  if (url !== undefined && url !== '') {
-    return url;
-  }
-  const ip = typeof connection.docker_ip === 'string' ? connection.docker_ip : undefined;
-  const rawPort = connection.docker_port;
-  const port =
-    typeof rawPort === 'string' || typeof rawPort === 'number' ? String(rawPort) : undefined;
-  if (ip !== undefined && ip !== '' && port !== undefined && port !== '') {
-    return `nc ${ip} ${port}`;
-  }
-  return undefined;
-}
 
 function formatQuestion(index: number, question: CompetitionQuestion): string {
   const lines: string[] = [];
@@ -52,7 +33,7 @@ function formatQuestion(index: number, question: CompetitionQuestion): string {
   if (question.fileUrl !== '') {
     lines.push(`   attachment: ${question.fileUrl}`);
   }
-  const connection = formatConnection(question);
+  const connection = formatConnection(question.connection);
   if (connection !== undefined) {
     lines.push(`   connection: ${connection}`);
   }

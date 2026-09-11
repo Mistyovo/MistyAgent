@@ -161,6 +161,25 @@ describe('CompetitionClient', () => {
     respondJson({ code: 500, message: '题目不存在' });
     await expect(client().submitFlag('missing', 'flag{x}')).rejects.toThrow(/题目不存在/);
   });
+
+  it('接口路径可覆盖（决赛换 hash 零代码切换）', async () => {
+    const overridden = new CompetitionClient({
+      token: 't',
+      baseUrl,
+      queryPath: '/new-query',
+      resetPath: '/new-reset',
+      submitPath: '/new-submit',
+    });
+    respondJson({ code: 0, message: '查询成功', data: [] });
+    await overridden.listQuestions();
+    expect(lastUrl).toBe('/new-query?token=t');
+    respondJson({ code: 0, message: '操作成功' });
+    await overridden.resetEnvironment('q1');
+    expect(lastUrl).toBe('/new-reset?token=t&question_id=q1');
+    respondJson({ code: 0, message: '答案正确', status: 1 });
+    await overridden.submitFlag('q1', 'flag{y}');
+    expect(lastUrl).toBe('/new-submit?token=t&question_id=q1&answer=flag%7By%7D');
+  });
 });
 
 describe('competition tools', () => {

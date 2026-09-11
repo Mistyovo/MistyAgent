@@ -48,10 +48,10 @@
 
 | # | 事项 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
-| C1 | **端点路径环境变量化**：`MISTY_CTF_QUERY_PATH` / `MISTY_CTF_RESET_PATH` / `MISTY_CTF_SUBMIT_PATH` 覆盖默认 hash | P0 | ❌ 待做（现硬编码） | 决赛若换 hash，零代码改动即可切换 |
-| C2 | **一键扫题 launcher**（`misty-arena`）：拉题 → 按题起并行 print 进程（bypassPermissions）→ 崩溃自动重启 1 次 → 实时汇总战况 → 生成 WriteUp 素材 | P0 | ❌ 待做 | 30 分钟窗口内自动跑完全部题；每题产出 `run.log` + flag + 提交结果 |
-| C3 | **进程守护**：launcher 对单题进程 watchdog（退出码非 0 / 10 分钟无输出 → 杀掉重启一次，保留上下文续跑） | P0 | ❌ 待做 | 人为 kill 一个解题进程，launcher 自行恢复 |
-| C4 | **冒烟脚本**（`misty-smoke`）：一条命令验证 ①官方 key+baseURL 可对话 ②competition_list 通 ③bash/网络工具可用 | P0 | ❌ 待做 | 9/13 平台测试窗口 2 分钟内出全绿报告 |
+| C1 | **端点路径环境变量化**：`MISTY_CTF_QUERY_PATH` / `MISTY_CTF_RESET_PATH` / `MISTY_CTF_SUBMIT_PATH` 覆盖默认 hash | P0 | ✅ 已完成 | 决赛若换 hash，零代码改动即可切换 |
+| C2 | **一键扫题 launcher**（`misty arena`）：拉题 → 按题起并行 print 进程（bypassPermissions）→ 自动重启（带会话上下文）→ 实时进度 + `arena-status.json` → 自动生成 `writeup-material.md` | P0 | ✅ 已完成 | 30 分钟窗口内自动跑完全部题；每题产出 `run.log` + flag + 提交结果 |
+| C3 | **进程守护**：停滞看门狗（默认 8 分钟无输出杀进程重启，`--stall-min` 可调；Windows 下 taskkill /T 连树杀） | P0 | ✅ 已完成 | 人为 kill 一个解题进程，launcher 自行恢复 |
+| C4 | **冒烟脚本**（`misty smoke`）：模型端点对话 / competition_list / shell / python 关键项 + curl / objdump 警告项，失败退出码 1 | P0 | ✅ 已完成 | 9/13 平台测试窗口 2 分钟内出全绿报告 |
 | C5 | pwn 武器库预置：pwntools 模板、ret2libc 偏移速查、常见对齐坑提示写入解题 system prompt | P1 | ❌ 待做 | pwn 题 cold start 时间缩短 |
 | C6 | Web/取证常用技能沉淀为 skill（`.misty/skills/`）：pcap 分析、Base 家族重组、XXE/SQLi 套路 | P1 | 部分（已有 skill 机制） | misc/web 类题首步即走对路线 |
 | C7 | 模型退避策略核对：确认 fallback 链与重试参数适合 3 小时窗口 | P2 | 待核对 | 端点偶发 5xx 不致单题全灭 |

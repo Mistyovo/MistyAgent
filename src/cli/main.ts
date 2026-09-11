@@ -8,7 +8,6 @@ import {
 } from '#/config/settings';
 import { TaskBoard } from '#/core/board';
 import { CheckpointStore, cleanupCheckpoints } from '#/core/checkpoint/checkpoint';
-import { CompetitionClient } from '#/core/competition';
 import { buildSystemPrompt } from '#/core/context/system-prompt';
 import { McpManager } from '#/core/mcp/manager';
 import { getMemoryDir } from '#/core/memory/paths';
@@ -35,6 +34,8 @@ import { errorMessage } from '#/core/errors';
 import { createProvider, type ProviderConfig } from '#/provider/factory';
 
 import { buildOverrides, collect, type CliOptions } from './options';
+import { resolveCompetitionClient, runArenaCommand } from './arena';
+import { runSmokeCommand } from './smoke';
 import { resolvePrintPrompt, runPrintMode } from './print-mode';
 import { exitProcess } from './exit-process';
 
@@ -284,20 +285,9 @@ async function action(options: CliOptions): Promise<void> {
       Promise.resolve({ approved: false, feedback: 'Session is not ready yet; cannot submit plan approval' }),
   };
   // 赛事平台接入：队伍 token 只走环境变量（MISTY_CTF_TOKEN / CTF_TOKEN），
-  // 未设置时不注册 competition_* 工具；MISTY_CTF_BASE_URL 可指向本地 mock
-  const ctfToken =
-    process.env.MISTY_CTF_TOKEN !== undefined && process.env.MISTY_CTF_TOKEN !== ''
-      ? process.env.MISTY_CTF_TOKEN
-      : process.env.CTF_TOKEN;
-  const competition =
-    ctfToken !== undefined && ctfToken !== ''
-      ? new CompetitionClient({
-          token: ctfToken,
-          ...(process.env.MISTY_CTF_BASE_URL !== undefined && process.env.MISTY_CTF_BASE_URL !== ''
-            ? { baseUrl: process.env.MISTY_CTF_BASE_URL }
-            : {}),
-        })
-      : undefined;
+  // 未设置时不注册 competition_* 工具；MISTY_CTF_BASE_URL / MISTY_CTF_*_PATH
+  // 覆盖地址与接口路径（决赛换 hash 零代码切换）。装配与 arena 子命令共享。
+  const competition = resolveCompetitionClient(process.env);
   if (competition !== undefined) {
     console.error('Competition tools enabled: competition_list / competition_reset / competition_submit');
   }
@@ -415,6 +405,30 @@ program
   .option('-c, --continue', 'Resume the most recent session in the current directory')
   .option('--resume [sessionId]', 'Resume a specific session; without an argument, list candidates (pick one when several match)')
   .action((options: CliOptions) => action(options));
+
+const int = (value: string): number => Number.parseInt(value, 10);
+
+program
+  .command('arena')
+  .description('One-click CTF sweep: list unsolved questions, solve them in parallel misty processes with watchdog/restart, then emit status and WriteUp material')
+  .option('--dir <dir>', 'Working directory for per-question runs (default ./ctf-arena)')
+  .option('--concurrency <n>', 'Parallel solver processes (default 3)', int)
+  .option('--attempts <n>', 'Max attempts per question incl. restarts (default 2)', int)
+  .option('--stall-min <minutes>', 'Treat a solver as stalled after this long without output (default 8)', int)
+  .option('--budget-min <minutes>', 'Overall time budget; kill everything when exhausted (default 28)', int)
+  .option('--include-solved', 'Also attack questions already solved by the team')
+  .option('--only <ids>', 'Comma-separated question_id whitelist (single-question debugging)')
+  .option('--misty-cmd <cmd>', 'Command to spawn misty itself, e.g. "npx tsx src/cli/main.ts" when running from source')
+  .action(async (options) => {
+    process.exitCode = await runArenaCommand(options);
+  });
+
+program
+  .command('smoke')
+  .description('Pre-match smoke test: model endpoint, competition platform, shell/python/pwn toolchain')
+  .action(async () => {
+    process.exitCode = await runSmokeCommand();
+  });
 
 try {
   await program.parseAsync();

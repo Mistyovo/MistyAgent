@@ -294,8 +294,20 @@ misty
 - `competition_submit`：提交 flag；正确/错误均回喂为工具结果，不中断 agent loop
 
 工具失败（token 失效、网络超时、非 JSON 响应等）统一转为 `CompetitionApiError`
-的 isError 工具结果回喂模型。print 无头模式下配合 `--permission-mode
-bypassPermissions` 即可全自动解题。
+的 isError 工具结果回喂模型。print 无头模式下配合 `--mode bypassPermissions`
+即可全自动解题。
+
+赛事专用子命令（同 token 环境变量开关）：
+
+- `misty smoke`：赛前冒烟——模型端点对话、平台 `competition_list`、
+  shell/python/curl/objdump 工具链逐项检查，关键项失败退出码 1
+- `misty arena`：一键扫题——拉取未解出题，每题在独立目录并行起 misty
+  解题进程（默认并发 3、最多尝试 2 次，重启带 `--continue` 复用会话上下文），
+  停滞看门狗（默认 8 分钟无输出杀进程）与总预算（默认 28 分钟）兜底；
+  判题以平台 `is_solved` 为基准，实时进度上屏并落 `arena-status.json`，
+  收尾自动生成 `writeup-material.md`。常用参数：`--dir/--concurrency/--attempts/
+  --stall-min/--budget-min/--only <ids>/--include-solved`；从源码 tsx 运行时用
+  `--misty-cmd "npx tsx src/cli/main.ts"` 指定自身入口
 
 ### 检查点与回滚
 

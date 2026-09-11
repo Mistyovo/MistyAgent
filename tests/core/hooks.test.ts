@@ -251,7 +251,7 @@ describe('hooks 配置', () => {
           },
         }),
       );
-      const { settings } = loadSettings(projectDir, {}, { userSettingsPath, env: {} });
+      const { settings } = loadSettings(projectDir, {}, { userSettingsPath });
       expect(settings.hooks?.preToolUse).toEqual([
         { command: 'user-hook' },
         { matcher: 'write', command: 'project-hook' },

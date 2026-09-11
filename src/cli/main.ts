@@ -238,8 +238,9 @@ async function action(options: CliOptions): Promise<void> {
   } catch (error) {
     fail(
       `${errorMessage(error)}\n` +
-        'Hint: set the environment variable first, e.g. `export MISTY_API_KEY=sk-...` (on cmd use `set MISTY_API_KEY=...`); ' +
-        'optional MISTY_BASE_URL / MISTY_MODEL select the endpoint and model.',
+        'Hint: put the key in ~/.misty/settings.json, e.g. ' +
+        '{"provider":{"type":"openai","apiKey":"sk-...","defaultModel":"...","baseURL":"https://..."}}; ' +
+        'project .misty/settings.json overrides the user file.',
     );
   }
 
@@ -384,14 +385,14 @@ program
   .name('misty')
   .description('Misty — a personal CLI coding agent (OpenAI-compatible API)')
   .version('0.1.0')
-  .option('--model <model>', 'Override the default model (equivalent to MISTY_MODEL)')
+  .option('--model <model>', 'Override the default model from settings.json')
   .option(
     '--fallback <model>',
     'Append a fallback model: fall back in the order added when the primary model fails (repeatable, current turn only)',
     collect,
     [] as string[],
   )
-  .option('--base-url <url>', 'Override the API base URL (equivalent to MISTY_BASE_URL)')
+  .option('--base-url <url>', 'Override the API base URL from settings.json')
   .addOption(
     new Option('--mode <mode>', 'Permission mode').choices(permissionModeSchema.options),
   )

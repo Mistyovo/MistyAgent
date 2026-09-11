@@ -64,11 +64,8 @@ describe('loadSettings', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function load(
-    cliOverrides: Parameters<typeof loadSettings>[1] = {},
-    env: NodeJS.ProcessEnv = {},
-  ) {
-    return loadSettings(projectDir, cliOverrides, { userSettingsPath, env });
+  function load(cliOverrides: Parameters<typeof loadSettings>[1] = {}) {
+    return loadSettings(projectDir, cliOverrides, { userSettingsPath });
   }
 
   it('无任何配置层时返回内置默认值', () => {
@@ -77,7 +74,7 @@ describe('loadSettings', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('层级优先级：user < project < 环境变量 < CLI flags', () => {
+  it('层级优先级：user < project < CLI flags', () => {
     writeSettings(userDir, {
       provider: { defaultModel: 'user-model', baseURL: 'https://user.example.com' },
       maxTokens: 1000,
@@ -89,31 +86,16 @@ describe('loadSettings', () => {
     expect(fromFiles.settings.provider.baseURL).toBe('https://user.example.com');
     expect(fromFiles.settings.maxTokens).toBe(1000);
 
-    const fromEnv = load({}, { MISTY_MODEL: 'env-model' });
-    expect(fromEnv.settings.provider.defaultModel).toBe('env-model');
-
-    const fromCli = load({ provider: { defaultModel: 'cli-model' } }, { MISTY_MODEL: 'env-model' });
+    const fromCli = load({ provider: { defaultModel: 'cli-model' } });
     expect(fromCli.settings.provider.defaultModel).toBe('cli-model');
   });
 
-  it('环境变量映射：MISTY_API_KEY 优先于 OPENAI_API_KEY', () => {
-    const misty = load({}, { MISTY_API_KEY: 'sk-misty', OPENAI_API_KEY: 'sk-openai' });
-    expect(misty.settings.provider.apiKey).toBe('sk-misty');
-
-    const fallback = load({}, { OPENAI_API_KEY: 'sk-openai' });
-    expect(fallback.settings.provider.apiKey).toBe('sk-openai');
-
-    const urls = load({}, { MISTY_BASE_URL: 'https://env.example.com' });
-    expect(urls.settings.provider.baseURL).toBe('https://env.example.com');
-  });
-
-  it('settings.json 中的 apiKey 被警告并忽略', () => {
-    writeSettings(userDir, { provider: { apiKey: 'sk-leaked', defaultModel: 'user-model' } });
+  it('settings.json 中的 apiKey 被接受并参与分层合并', () => {
+    writeSettings(userDir, { provider: { apiKey: 'sk-user', defaultModel: 'user-model' } });
+    writeSettings(projectDir, { provider: { apiKey: 'sk-project' } });
     const { settings, warnings } = load();
-    expect(settings.provider.apiKey).toBeUndefined();
-    expect(settings.provider.defaultModel).toBe('user-model');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('apiKey');
+    expect(settings.provider.apiKey).toBe('sk-project');
+    expect(warnings).toEqual([]);
   });
 
   it('非法 JSON 的配置文件降级为警告并跳过', () => {

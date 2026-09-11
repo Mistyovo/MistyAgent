@@ -33,13 +33,17 @@ CLI 入口 (commander)
 1. 内置默认值
 2. `~/.misty/settings.json`（用户级）
 3. `<cwd>/.misty/settings.json`（项目级）
-4. 环境变量：`MISTY_API_KEY` / `MISTY_BASE_URL` / `MISTY_MODEL` / `OPENAI_API_KEY`（优先级低于 `MISTY_API_KEY`）
-5. CLI flags（内存层）
+4. CLI flags（内存层）
 
 ```jsonc
 // .misty/settings.json
 {
-  "provider": { "type": "openai", "baseURL": "https://api.example.com/v1", "defaultModel": "kimi-k2" },
+  "provider": {
+    "type": "openai",
+    "apiKey": "sk-...",                        // 密钥直接写配置文件
+    "baseURL": "https://api.example.com/v1",
+    "defaultModel": "kimi-k2"
+  },
   "fallbackModels": ["kimi-k1.5", "gpt-5-mini"],  // 主模型失败时依次降级的备用模型
   "permissionMode": "default",           // default | acceptEdits | plan | bypassPermissions
   "permissionRules": [{ "action": "deny", "tool": "write_file", "pattern": "*.env" }],
@@ -65,8 +69,9 @@ CLI 入口 (commander)
   切换发出 `model-fallback` 事件（TUI 落暗色提示、状态栏模型名更新；print 模式写 stderr）。
   **fallback 仅当前 turn 生效**：后续 step 沿用切换后的模型，新 turn 从主模型重新开始
 
-**安全约束：API key 只允许来自环境变量**（`MISTY_API_KEY` 或 `OPENAI_API_KEY`）。
-settings.json 中出现 `provider.apiKey` 会被警告并忽略，禁止把密钥写进任何落盘配置。
+**注意**：API key 以明文落在 settings.json（用户级或项目级皆可，项目级覆盖用户级），
+请自行确保该文件不进 git、不被无关进程读取（例如把 `.misty/settings.json` 加进
+`.gitignore`）。
 
 ### Hooks
 
@@ -122,8 +127,7 @@ Agent 工具池，名字加 `mcp__<server>__<tool>` 前缀避免与内置工具�
 ## 使用
 
 ```bash
-export MISTY_API_KEY=sk-...        # cmd: set MISTY_API_KEY=sk-...
-export MISTY_BASE_URL=https://...  # 可选；MISTY_MODEL 指定模型
+# 先写配置（见上文「配置」章节），key/baseURL/model 都在 settings.json 里
 npm run build && node dist/cli.js  # 或开发期 npm run dev
 ```
 

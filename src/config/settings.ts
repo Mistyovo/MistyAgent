@@ -12,7 +12,7 @@ import {
   type Settings,
 } from './schema';
 
-/** CLI flags 内存层。刻意不含 apiKey：API key 只允许来自环境变量 */
+/** CLI flags 内存层 */
 export interface SettingsOverrides {
   provider?: {
     baseURL?: string;
@@ -29,8 +29,6 @@ export interface SettingsOverrides {
 export interface LoadSettingsOptions {
   /** 默认 ~/.misty/settings.json，测试可注入临时路径 */
   userSettingsPath?: string;
-  /** 默认 process.env，测试可注入 */
-  env?: NodeJS.ProcessEnv;
 }
 
 export interface LoadedSettings {
@@ -84,38 +82,12 @@ function readSettingsFile(
     warnings.push(`Config file ${filePath} does not contain a JSON object; ignored`);
     return undefined;
   }
-  if (isPlainObject(parsed.provider) && parsed.provider.apiKey !== undefined) {
-    warnings.push(
-      `provider.apiKey in config file ${filePath} was ignored: the API key may only come from the MISTY_API_KEY / OPENAI_API_KEY environment variables`,
-    );
-    const provider = { ...parsed.provider };
-    delete provider.apiKey;
-    return { ...parsed, provider };
-  }
   return parsed;
-}
-
-function envLayer(env: NodeJS.ProcessEnv): Record<string, unknown> {
-  const provider: Record<string, unknown> = {};
-  const apiKey = env.MISTY_API_KEY !== undefined && env.MISTY_API_KEY !== ''
-    ? env.MISTY_API_KEY
-    : env.OPENAI_API_KEY;
-  if (apiKey !== undefined && apiKey !== '') {
-    provider.apiKey = apiKey;
-  }
-  if (env.MISTY_BASE_URL !== undefined && env.MISTY_BASE_URL !== '') {
-    provider.baseURL = env.MISTY_BASE_URL;
-  }
-  if (env.MISTY_MODEL !== undefined && env.MISTY_MODEL !== '') {
-    provider.defaultModel = env.MISTY_MODEL;
-  }
-  return Object.keys(provider).length > 0 ? { provider } : {};
 }
 
 /**
  * 分层加载配置，后者覆盖前者：
- * 内置 default → ~/.misty/settings.json → <cwd>/.misty/settings.json
- * → 环境变量 → CLI flags 内存层。
+ * 内置 default → ~/.misty/settings.json → <cwd>/.misty/settings.json → CLI flags 内存层。
  * 文件层损坏时降级为警告并跳过；合并结果不合法时抛错。
  */
 export function loadSettings(
@@ -131,7 +103,6 @@ export function loadSettings(
   for (const layer of [
     readSettingsFile(userSettingsPath, warnings),
     readSettingsFile(projectSettingsPath, warnings),
-    envLayer(options.env ?? process.env),
     cliOverrides,
   ]) {
     merged = deepMerge(merged, layer);
@@ -150,7 +121,9 @@ export function loadSettings(
 export function resolveProviderConfig(settings: Settings): ProviderConfig {
   const { apiKey, baseURL } = settings.provider;
   if (apiKey === undefined || apiKey === '') {
-    throw new Error('API key not configured: set the MISTY_API_KEY or OPENAI_API_KEY environment variable');
+    throw new Error(
+      'API key not configured: set provider.apiKey in ~/.misty/settings.json (or <project>/.misty/settings.json), e.g. {"provider":{"type":"openai","apiKey":"sk-...","defaultModel":"..."}}',
+    );
   }
   return { type: 'openai', apiKey, baseURL };
 }
